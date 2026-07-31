@@ -13,3 +13,4 @@ data/*.db-*
 .DS_Store
 Thumbs.db
 *.log
+.idea
