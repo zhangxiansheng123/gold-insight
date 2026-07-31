@@ -5,6 +5,9 @@
     quotes: [],
     history: null,
     prediction: null,
+    quoteTimer: null,
+    quoteRefreshing: false,
+    quoteIntervalMs: 3000,
   };
 
   const els = {
@@ -20,6 +23,8 @@
     chartPanel: document.getElementById("chartPanel"),
     comparePanel: document.getElementById("comparePanel"),
     topDisclaimer: document.getElementById("topDisclaimer"),
+    liveStatus: document.getElementById("liveStatus"),
+    liveText: document.getElementById("liveText"),
   };
 
   const priceChart = echarts.init(document.getElementById("priceChart"));
@@ -60,23 +65,69 @@
     return v >= 0 ? "up" : "down";
   }
 
-  function renderQuotes(items) {
+  function setLiveStatus(mode, text) {
+    if (!els.liveStatus || !els.liveText) return;
+    els.liveStatus.classList.remove("is-error", "is-paused");
+    if (mode === "error") els.liveStatus.classList.add("is-error");
+    if (mode === "paused") els.liveStatus.classList.add("is-paused");
+    els.liveText.textContent = text;
+  }
+
+  function renderQuotes(items, { silent = false } = {}) {
+    const prevMap = Object.fromEntries((state.quotes || []).map((q) => [q.symbol, q.price]));
     state.quotes = items || [];
     els.quoteCards.innerHTML = state.quotes
       .map((q, i) => {
         const pct = q.change_pct;
         const sign = pct != null && pct >= 0 ? "+" : "";
+        const prev = prevMap[q.symbol];
+        let flash = "";
+        if (prev != null && q.price != null && Number(prev) !== Number(q.price)) {
+          flash = Number(q.price) > Number(prev) ? "flash-up" : "flash-down";
+        }
         return `
-          <article class="quote-card" style="animation-delay:${i * 0.08}s">
-            <div class="name">${q.name}</div>
-            <div class="price">${fmt(q.price)} <small style="font-size:0.9rem;color:#6b7785">${q.unit || ""}</small></div>
+          <article class="quote-card" style="animation-delay:${silent ? 0 : i * 0.08}s">
+            <div class="name">${q.name}<span class="live-tag">LIVE</span></div>
+            <div class="price ${flash}">${fmt(q.price)} <small style="font-size:0.9rem;color:#6b7785">${q.unit || ""}</small></div>
             <div class="meta">
               <span class="${clsChange(pct)}">${sign}${fmt(pct, 2)}%</span>
-              <span>${new Date(q.ts).toLocaleString("zh-CN")}</span>
+              <span>${new Date(q.ts).toLocaleTimeString("zh-CN")}</span>
             </div>
           </article>`;
       })
       .join("");
+  }
+
+  async function loadQuotes({ silent = false } = {}) {
+    if (state.quoteRefreshing) return;
+    state.quoteRefreshing = true;
+    try {
+      const data = await api("/api/quotes?refresh=true");
+      renderQuotes(data.items, { silent });
+      const now = new Date().toLocaleTimeString("zh-CN");
+      setLiveStatus("live", `实时 · ${now}`);
+    } catch (e) {
+      setLiveStatus("error", "刷新失败");
+      if (!silent) throw e;
+    } finally {
+      state.quoteRefreshing = false;
+    }
+  }
+
+  function startQuotePolling() {
+    stopQuotePolling();
+    state.quoteTimer = setInterval(() => {
+      if (document.hidden) return;
+      loadQuotes({ silent: true }).catch(() => {});
+    }, state.quoteIntervalMs);
+    setLiveStatus("live", "实时刷新中");
+  }
+
+  function stopQuotePolling() {
+    if (state.quoteTimer) {
+      clearInterval(state.quoteTimer);
+      state.quoteTimer = null;
+    }
   }
 
   function biasLabel(bias) {
@@ -218,11 +269,6 @@
     });
   }
 
-  async function loadQuotes() {
-    const data = await api("/api/quotes?refresh=true");
-    renderQuotes(data.items);
-  }
-
   async function loadHistory() {
     const data = await api(`/api/history/${state.symbol}?days=180`);
     renderHistory(data);
@@ -304,10 +350,19 @@
     });
   });
   document.getElementById("btnRefresh").addEventListener("click", () => {
-    loadQuotes().catch((e) => alert(e.message));
+    loadQuotes({ silent: true }).catch((e) => alert(e.message));
   });
   document.getElementById("btnPredict").addEventListener("click", () => {
     loadPrediction().catch((e) => alert(e.message));
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      setLiveStatus("paused", "已暂停");
+    } else {
+      loadQuotes({ silent: true }).catch(() => {});
+      setLiveStatus("live", "实时刷新中");
+    }
   });
 
   window.addEventListener("resize", () => {
@@ -320,10 +375,13 @@
   (async function boot() {
     try {
       await loadQuotes();
+      startQuotePolling();
       await loadHistory();
       await loadPrediction();
     } catch (e) {
+      setLiveStatus("error", "连接失败");
       els.quoteCards.innerHTML = `<div class="quote-card">加载失败：${e.message}<br/>可稍后刷新，或检查网络与数据源。</div>`;
+      startQuotePolling();
     }
   })();
 })();

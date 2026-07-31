@@ -26,7 +26,13 @@
       <button class="nav-btn" data-symbol="ZHESHANG_GOLD">浙商积存金</button>
       <button class="nav-btn" data-view="compare">品种对比</button>
     </nav>
-    <button id="btnRefresh" class="ghost-btn" type="button">刷新行情</button>
+    <div class="topbar-actions">
+      <span id="liveStatus" class="live-status" title="行情自动刷新中">
+        <span class="live-dot"></span>
+        <span id="liveText">实时连接中</span>
+      </span>
+      <button id="btnRefresh" class="ghost-btn" type="button">立即刷新</button>
+    </div>
   </header>
 
   <main>
