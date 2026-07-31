@@ -509,21 +509,11 @@
     const rows = data.items || [];
     if (!rows.length) {
       els.forecastBody.innerHTML =
-        `<tr><td colspan="9" class="muted">该区间暂无预测归档</td></tr>`;
+        `<tr><td colspan="8" class="muted">该区间暂无预测归档</td></tr>`;
       return;
     }
     els.forecastBody.innerHTML = rows
       .map((r) => {
-        const accurate =
-          r.accurate == null && r.close_in_band == null
-            ? null
-            : (r.accurate ?? r.close_in_band);
-        const band =
-          accurate == null
-            ? `<span class="badge-na">—</span>`
-            : accurate
-              ? `<span class="badge-yes">准确</span>`
-              : `<span class="badge-no">偏差</span>`;
         const err =
           r.error == null
             ? "—"
@@ -539,7 +529,6 @@
           <td>${fmt(r.predicted)}</td>
           <td>${r.actual_close == null ? "—" : fmt(r.actual_close)}</td>
           <td>${err}</td>
-          <td>${band}</td>
           <td>${conf}</td>
           <td>${r.made_on}</td>
         </tr>`;
@@ -560,7 +549,7 @@
     } catch (e) {
       if (!silent) throw e;
       els.forecastBody.innerHTML =
-        `<tr><td colspan="9" class="muted">加载失败：${e.message}</td></tr>`;
+        `<tr><td colspan="8" class="muted">加载失败：${e.message}</td></tr>`;
     }
   }
 

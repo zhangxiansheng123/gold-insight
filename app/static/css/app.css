@@ -369,12 +369,7 @@ main { width: min(1180px, calc(100% - 2rem)); margin: 0 auto 3rem; }
   gap: 0.65rem;
   align-items: end;
   flex-wrap: wrap;
-  margin: 0.2rem 0 0.4rem;
-}
-.forecast-hint {
-  font-size: 0.8rem;
-  margin: 0 0 0.75rem;
-  line-height: 1.45;
+  margin: 0.2rem 0 0.8rem;
 }
 .forecast-filters .field input[type="date"] {
   font: inherit;

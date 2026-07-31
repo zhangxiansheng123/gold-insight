@@ -87,9 +87,6 @@
           <button id="btnForecastQuery" class="ghost-btn" type="button">查询</button>
           <button id="btnBackfillRange" class="ghost-btn" type="button" title="用所选日期区间回放积存金预测并重算准确率">按区间回测重算</button>
         </div>
-        <p class="muted forecast-hint">
-          固定浙商积存金。准确概率＝收盘落在预测区间内的比例；「概率」列为模型置信度，≥85% 会标火苗。选日期后可回测重算。
-        </p>
         <div class="forecast-table-wrap">
           <table class="forecast-table" id="forecastTable">
             <thead>
@@ -100,13 +97,12 @@
                 <th>预测中</th>
                 <th>实际收盘</th>
                 <th>误差</th>
-                <th>准确</th>
                 <th>概率</th>
                 <th>生成日</th>
               </tr>
             </thead>
             <tbody id="forecastBody">
-              <tr><td colspan="9" class="muted">暂无数据，生成预测或按区间回测后显示</td></tr>
+              <tr><td colspan="8" class="muted">暂无数据，生成预测或按区间回测后显示</td></tr>
             </tbody>
           </table>
         </div>
