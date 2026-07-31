@@ -28,10 +28,13 @@ class Settings(BaseSettings):
     jd_price_url: str = "https://api.jdjygold.com/gw2/generic/jrm/h5/m/stdLatestPrice"
     zheshang_sku: str = "1961543816"
 
-    # 伦敦金历史（COMEX 黄金期货近似）
+    # 伦敦金现货（优先准确现货，不再用 GC=F 期货当盘口）
+    london_spot_url: str = "https://api.goldprice.dev/v1/prices"
+    london_spot_symbol: str = "XAU-USD-SPOT"
+    london_spot_fallback_url: str = "https://api.gold-api.com/price/XAU"
+    # 历史日线仍用 Yahoo 期货（仅作走势训练；当日收盘会被现货校准）
     london_yahoo_symbol: str = "GC=F"
-    # 伦敦现货备用
-    london_yahoo_spot: str = "XAUUSD=X"
+    london_yahoo_spot: str = "GC=F"
 
     # 盎司→克
     troy_oz_to_gram: float = 31.1034768

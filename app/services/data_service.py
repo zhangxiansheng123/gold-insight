@@ -43,11 +43,55 @@ async def collect_live_quotes() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     try:
         for q in quotes:
+            _apply_daily_change(db, q)
             persist_quote(db, q)
+            _calibrate_today_bar(db, q)
             out.append(_quote_dict(q))
     finally:
         db.close()
     return out
+
+
+def _apply_daily_change(db: Session, quote: LiveQuote) -> None:
+    """优先用昨日日线收盘计算涨跌幅。"""
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    prev = (
+        db.query(DailyBar)
+        .filter(DailyBar.symbol == quote.symbol, DailyBar.trade_date < today)
+        .order_by(DailyBar.trade_date.desc())
+        .first()
+    )
+    if not prev or not prev.close:
+        return
+    quote.change_amt = round(quote.price - prev.close, 2)
+    quote.change_pct = round((quote.price - prev.close) / prev.close * 100, 4)
+
+
+def _calibrate_today_bar(db: Session, quote: LiveQuote) -> None:
+    """用实时价校准当日 K 线收盘，避免期货升贴水污染当日点位。"""
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    existing = db.scalar(
+        select(DailyBar).where(DailyBar.symbol == quote.symbol, DailyBar.trade_date == today)
+    )
+    if existing:
+        existing.close = quote.price
+        existing.high = max(existing.high, quote.price)
+        existing.low = min(existing.low, quote.price)
+        existing.source = quote.source
+    else:
+        db.add(
+            DailyBar(
+                symbol=quote.symbol,
+                trade_date=today,
+                open=quote.price,
+                high=quote.price,
+                low=quote.price,
+                close=quote.price,
+                volume=None,
+                source=quote.source,
+            )
+        )
+    db.commit()
 
 
 def _quote_dict(q: LiveQuote) -> dict[str, Any]:

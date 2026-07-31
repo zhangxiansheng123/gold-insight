@@ -15,10 +15,10 @@ PRODUCTS = {
     SYMBOL_LONDON: {
         "code": SYMBOL_LONDON,
         "name": "伦敦金",
-        "name_en": "London Gold / XAU",
+        "name_en": "London Gold / XAUUSD Spot",
         "unit": "美元/盎司",
         "currency": "USD",
-        "description": "国际现货黄金（COMEX/XAU 近似），全球定价基准。",
+        "description": "伦敦现货黄金（XAU/USD spot），全球定价基准。",
     },
     SYMBOL_ZHESHANG: {
         "code": SYMBOL_ZHESHANG,
@@ -108,48 +108,111 @@ async def fetch_zheshang_quote() -> LiveQuote:
 
 
 async def fetch_london_quote() -> LiveQuote:
-    """优先 Yahoo GC=F，失败则用 XAUUSD=X。"""
+    """伦敦金现货：优先 goldprice.dev，其次 gold-api.com，最后 Yahoo 期货兜底。"""
+    errors: list[str] = []
+    for fetcher in (_fetch_london_goldprice_dev, _fetch_london_gold_api, _fetch_london_yahoo_fallback):
+        try:
+            return await fetcher()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{fetcher.__name__}: {exc}")
+    raise RuntimeError("伦敦金报价不可用: " + " | ".join(errors))
+
+
+async def _fetch_london_goldprice_dev() -> LiveQuote:
+    headers = {"User-Agent": "Mozilla/5.0 GoldInsight/0.1", "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+        resp = await client.get(
+            settings.london_spot_url,
+            params={"symbol": settings.london_spot_symbol},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+
+    rows = body.get("symbols") or []
+    if not rows:
+        # 兼容单对象返回
+        row = body if body.get("price") is not None else None
+    else:
+        row = rows[0]
+    if not row or row.get("price") is None:
+        raise RuntimeError(f"empty goldprice.dev payload: {body}")
+
+    price = float(row["price"])
+    bid = float(row["bid"]) if row.get("bid") not in (None, "") else price
+    ask = float(row["ask"]) if row.get("ask") not in (None, "") else price
+    mid = round((bid + ask) / 2, 2) if bid and ask else round(price, 2)
+
+    meta = PRODUCTS[SYMBOL_LONDON]
+    return LiveQuote(
+        symbol=SYMBOL_LONDON,
+        name=meta["name"],
+        price=mid,
+        buy_price=round(bid, 2),
+        sell_price=round(ask, 2),
+        change_amt=None,
+        change_pct=None,
+        currency=meta["currency"],
+        unit=meta["unit"],
+        source="goldprice.dev",
+        ts=datetime.now().astimezone(),
+        raw=row,
+    )
+
+
+async def _fetch_london_gold_api() -> LiveQuote:
+    headers = {"User-Agent": "Mozilla/5.0 GoldInsight/0.1", "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+        resp = await client.get(settings.london_spot_fallback_url)
+        resp.raise_for_status()
+        body = resp.json()
+    price = float(body["price"])
+    meta = PRODUCTS[SYMBOL_LONDON]
+    return LiveQuote(
+        symbol=SYMBOL_LONDON,
+        name=meta["name"],
+        price=round(price, 2),
+        buy_price=round(price, 2),
+        sell_price=round(price, 2),
+        change_amt=None,
+        change_pct=None,
+        currency=meta["currency"],
+        unit=meta["unit"],
+        source="gold-api.com",
+        ts=datetime.now().astimezone(),
+        raw=body,
+    )
+
+
+async def _fetch_london_yahoo_fallback() -> LiveQuote:
+    """仅作兜底：COMEX 期货，可能与伦敦现货有升贴水差异。"""
     import asyncio
 
     def _load() -> LiveQuote:
         import yfinance as yf
 
-        last_err: Exception | None = None
-        for symbol in (settings.london_yahoo_symbol, settings.london_yahoo_spot):
-            try:
-                ticker = yf.Ticker(symbol)
-                hist = ticker.history(period="5d", interval="1d")
-                if hist is None or hist.empty:
-                    info = ticker.fast_info
-                    price = float(getattr(info, "last_price", None) or getattr(info, "lastPrice", 0) or 0)
-                    if not price:
-                        raise RuntimeError(f"empty quote for {symbol}")
-                    prev = price
-                else:
-                    price = float(hist["Close"].iloc[-1])
-                    prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else price
-
-                change_amt = price - prev
-                change_pct = (change_amt / prev * 100) if prev else 0.0
-                meta = PRODUCTS[SYMBOL_LONDON]
-                return LiveQuote(
-                    symbol=SYMBOL_LONDON,
-                    name=meta["name"],
-                    price=round(price, 2),
-                    buy_price=round(price, 2),
-                    sell_price=round(price, 2),
-                    change_amt=round(change_amt, 2),
-                    change_pct=round(change_pct, 4),
-                    currency=meta["currency"],
-                    unit=meta["unit"],
-                    source=f"yahoo:{symbol}",
-                    ts=datetime.now().astimezone(),
-                    raw={"yahoo_symbol": symbol},
-                )
-            except Exception as exc:  # noqa: BLE001
-                last_err = exc
-                continue
-        raise RuntimeError(f"London gold quote unavailable: {last_err}")
+        ticker = yf.Ticker(settings.london_yahoo_symbol)
+        hist = ticker.history(period="5d", interval="1d")
+        if hist is None or hist.empty:
+            raise RuntimeError("yahoo GC=F empty")
+        price = float(hist["Close"].iloc[-1])
+        prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else price
+        change_amt = price - prev
+        change_pct = (change_amt / prev * 100) if prev else 0.0
+        meta = PRODUCTS[SYMBOL_LONDON]
+        return LiveQuote(
+            symbol=SYMBOL_LONDON,
+            name=meta["name"],
+            price=round(price, 2),
+            buy_price=round(price, 2),
+            sell_price=round(price, 2),
+            change_amt=round(change_amt, 2),
+            change_pct=round(change_pct, 4),
+            currency=meta["currency"],
+            unit=meta["unit"],
+            source=f"yahoo:{settings.london_yahoo_symbol}",
+            ts=datetime.now().astimezone(),
+            raw={"yahoo_symbol": settings.london_yahoo_symbol, "note": "futures_fallback"},
+        )
 
     return await asyncio.to_thread(_load)
 
@@ -164,7 +227,45 @@ async def fetch_all_quotes() -> list[LiveQuote]:
             errors.append(str(exc))
     if not results and errors:
         raise RuntimeError("; ".join(errors))
+
+    # 用本地昨日快照补齐涨跌（现货源通常不给昨日价）
+    _fill_change_from_cache(results)
     return results
+
+
+def _fill_change_from_cache(quotes: list[LiveQuote]) -> None:
+    try:
+        from app.db import QuoteSnapshot, SessionLocal
+        from sqlalchemy import select
+    except Exception:  # noqa: BLE001
+        return
+
+    db = SessionLocal()
+    try:
+        for q in quotes:
+            if q.change_pct is not None:
+                continue
+            prev = db.scalars(
+                select(QuoteSnapshot)
+                .where(QuoteSnapshot.symbol == q.symbol, QuoteSnapshot.price != q.price)
+                .order_by(QuoteSnapshot.ts.desc())
+                .limit(1)
+            ).first()
+            if not prev or not prev.price:
+                # 退一步：取更早一条
+                prev = db.scalars(
+                    select(QuoteSnapshot)
+                    .where(QuoteSnapshot.symbol == q.symbol)
+                    .order_by(QuoteSnapshot.ts.desc())
+                    .offset(1)
+                    .limit(1)
+                ).first()
+            if not prev or not prev.price:
+                continue
+            q.change_amt = round(q.price - prev.price, 2)
+            q.change_pct = round((q.price - prev.price) / prev.price * 100, 4)
+    finally:
+        db.close()
 
 
 def ounces_to_cny_per_gram(usd_per_oz: float, usdcny: float) -> float:

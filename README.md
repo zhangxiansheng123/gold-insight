@@ -10,7 +10,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| 双品种行情 | 伦敦金（Yahoo `GC=F` / XAU）+ 浙商积存金（京东金融 SKU） |
+| 双品种行情 | 伦敦金现货（XAU/USD）+ 浙商积存金（京东金融 SKU） |
 | 技术面 | MA / MACD / RSI / 布林带 / ATR，并给出短线倾向摘要 |
 | 走势预测 | Gradient Boosting 滚动预测 1–30 日，含置信区间与特征重要性 |
 | 品种对比 | 归一化相对走势与相关性 |
@@ -24,9 +24,10 @@
 cd gold-insight
 uv sync
 # 确保本机 MySQL 已启动（默认库名 gold_insight，账号见 .env）
-uv run gold-insight
-# 或: uv run python run.py
+uv run python run.py
 ```
+
+若 `uv run gold-insight` 报「应用程序控制策略已阻止此文件」(os error 4551)，用上面的 `uv run python run.py` 即可（被拦的是 venv 里自动生成的 `.exe` 入口）。
 
 浏览器打开：http://127.0.0.1:8765
 
@@ -50,7 +51,7 @@ mysql+pymysql://root:123456@localhost:3306/gold_insight
 
 ## 数据说明
 
-- **伦敦金**：Yahoo Finance 黄金期货/现货日线，单位美元/盎司。
+- **伦敦金**：实时用现货源（goldprice.dev / gold-api.com，约 XAU/USD）；历史日线辅助用 Yahoo `GC=F`，当日会被现货价校准。
 - **浙商积存金**：京东金融 `stdLatestPrice`（SKU `1961543816`），单位元/克。
 - **积存金长历史**：公开长序列有限，冷启动用「伦敦金 × 美元兑人民币」估算，再用实时快照校准；界面与 API 会标注来源。
 
