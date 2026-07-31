@@ -80,6 +80,21 @@
     return v >= 0 ? "up" : "down";
   }
 
+  /** 概率展示：≥85% 带火苗高亮 */
+  function formatProb(rate, { label = "概率" } = {}) {
+    if (rate == null || Number.isNaN(Number(rate))) {
+      return `<span class="prob-badge">${label ? `${label} --` : "--"}</span>`;
+    }
+    const pct = Number(rate) <= 1 ? Number(rate) * 100 : Number(rate);
+    const hot = pct >= 85;
+    const text = `${pct.toFixed(1)}%`;
+    const title = label ? `${label} ${text}` : text;
+    if (hot) {
+      return `<span class="prob-badge is-hot" title="≥ 85%，参考价值较高"><span class="prob-flame" aria-hidden="true">🔥</span>${title}</span>`;
+    }
+    return `<span class="prob-badge">${title}</span>`;
+  }
+
   function setLiveStatus(mode, text) {
     if (!els.liveStatus || !els.liveText) return;
     els.liveStatus.classList.remove("is-error", "is-paused");
@@ -297,12 +312,13 @@
   function renderPrediction(data) {
     state.prediction = data;
     const change = data.change_pct;
-    els.predictMeta.textContent = `${data.model} · 置信 ${fmt(data.confidence * 100, 1)}%`;
+    els.predictMeta.innerHTML = `${data.model} · ${formatProb(data.confidence, { label: "置信概率" })}`;
     els.predictSummary.classList.remove("empty");
     els.predictSummary.innerHTML = `
       <div class="stat"><div class="label">当前价</div><div class="value">${fmt(data.current_price)}</div></div>
       <div class="stat"><div class="label">${data.horizon_days} 日后预测</div><div class="value">${fmt(data.predicted_price)}</div></div>
       <div class="stat"><div class="label">预期涨跌</div><div class="value ${clsChange(change)}">${change >= 0 ? "+" : ""}${fmt(change, 2)}%</div></div>
+      <div class="stat"><div class="label">置信概率</div><div class="value">${formatProb(data.confidence, { label: "" })}</div></div>
     `;
     els.topDisclaimer.textContent = data.disclaimer;
 
@@ -484,15 +500,16 @@
       data.accuracy_rate == null && data.hit_rate == null
         ? null
         : (data.accuracy_rate ?? data.hit_rate);
-    const rateText = rate == null ? "--" : `${(rate * 100).toFixed(1)}%`;
-    els.forecastMeta.textContent =
-      rate == null
-        ? `积存金 · 共 ${data.count || 0} 条 · 准确率 --（尚无已收盘目标日）`
-        : `积存金 · 共 ${data.count || 0} 条 · 准确率 ${rateText}（${hits}/${scored}）`;
+    const countPart = `积存金 · 共 ${data.count || 0} 条`;
+    if (rate == null) {
+      els.forecastMeta.innerHTML = `${countPart} · ${formatProb(null, { label: "准确概率" })} <span class="muted">（尚无已收盘目标日）</span>`;
+    } else {
+      els.forecastMeta.innerHTML = `${countPart} · ${formatProb(rate, { label: "准确概率" })} <span class="muted">（${hits}/${scored}）</span>`;
+    }
     const rows = data.items || [];
     if (!rows.length) {
       els.forecastBody.innerHTML =
-        `<tr><td colspan="8" class="muted">该区间暂无预测归档</td></tr>`;
+        `<tr><td colspan="9" class="muted">该区间暂无预测归档</td></tr>`;
       return;
     }
     els.forecastBody.innerHTML = rows
@@ -511,6 +528,10 @@
           r.error == null
             ? "—"
             : `<span class="${clsChange(r.error)}">${r.error >= 0 ? "+" : ""}${fmt(r.error)}</span>`;
+        const conf =
+          r.confidence == null
+            ? `<span class="badge-na">—</span>`
+            : formatProb(r.confidence, { label: "" });
         return `<tr>
           <td>${r.target_date}</td>
           <td>${fmt(r.high)}</td>
@@ -519,6 +540,7 @@
           <td>${r.actual_close == null ? "—" : fmt(r.actual_close)}</td>
           <td>${err}</td>
           <td>${band}</td>
+          <td>${conf}</td>
           <td>${r.made_on}</td>
         </tr>`;
       })
@@ -538,7 +560,7 @@
     } catch (e) {
       if (!silent) throw e;
       els.forecastBody.innerHTML =
-        `<tr><td colspan="8" class="muted">加载失败：${e.message}</td></tr>`;
+        `<tr><td colspan="9" class="muted">加载失败：${e.message}</td></tr>`;
     }
   }
 
