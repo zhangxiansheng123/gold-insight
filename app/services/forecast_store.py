@@ -222,9 +222,25 @@ def query_forecasts(
                 item["close_in_band"] = None
             items.append(item)
 
+        # 当日准确率：相对预测中轴的贴合度（误差越大越低；出带为 0）
+        # score = max(0, 1 - |实际-预测中| / 半带宽)
+        for item in items:
+            if item["actual_close"] is None:
+                item["daily_accuracy"] = None
+                item["accuracy_prob"] = None
+                continue
+            half = max((float(item["high"]) - float(item["low"])) / 2.0, 1e-6)
+            err_abs = abs(float(item["actual_close"]) - float(item["predicted"]))
+            score = max(0.0, 1.0 - err_abs / half)
+            item["daily_accuracy"] = round(score, 4)
+            item["accuracy_prob"] = item["daily_accuracy"]  # 兼容前端旧字段
+
         hit = [i for i in items if i["accurate"] is True]
         scored = [i for i in items if i["accurate"] is not None]
         accuracy = round(len(hit) / len(scored), 4) if scored else None
+        # 区间平均「当日准确率」（有收盘的才计入）
+        daily_scores = [i["daily_accuracy"] for i in items if i["daily_accuracy"] is not None]
+        avg_daily = round(sum(daily_scores) / len(daily_scores), 4) if daily_scores else None
         return {
             "symbol": symbol,
             "name": PRODUCTS[symbol]["name"],
@@ -233,7 +249,8 @@ def query_forecasts(
             "hit_count": len(hit),
             "scored_count": len(scored),
             "accuracy_rate": accuracy,
-            "hit_rate": accuracy,  # 兼容旧字段
+            "hit_rate": accuracy,  # 兼容：区间命中率
+            "avg_daily_accuracy": avg_daily,
             "items": items,
         }
     finally:

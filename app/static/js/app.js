@@ -312,13 +312,13 @@
   function renderPrediction(data) {
     state.prediction = data;
     const change = data.change_pct;
-    els.predictMeta.innerHTML = `${data.model} · ${formatProb(data.confidence, { label: "置信概率" })}`;
+    els.predictMeta.innerHTML = `${data.model} · ${formatProb(data.confidence, { label: "模型自评" })}`;
     els.predictSummary.classList.remove("empty");
     els.predictSummary.innerHTML = `
       <div class="stat"><div class="label">当前价</div><div class="value">${fmt(data.current_price)}</div></div>
       <div class="stat"><div class="label">${data.horizon_days} 日后预测</div><div class="value">${fmt(data.predicted_price)}</div></div>
       <div class="stat"><div class="label">预期涨跌</div><div class="value ${clsChange(change)}">${change >= 0 ? "+" : ""}${fmt(change, 2)}%</div></div>
-      <div class="stat"><div class="label">置信概率</div><div class="value">${formatProb(data.confidence, { label: "" })}</div></div>
+      <div class="stat"><div class="label">模型自评</div><div class="value">${formatProb(data.confidence, { label: "" })}</div></div>
     `;
     els.topDisclaimer.textContent = data.disclaimer;
 
@@ -500,11 +500,16 @@
       data.accuracy_rate == null && data.hit_rate == null
         ? null
         : (data.accuracy_rate ?? data.hit_rate);
+    const avgDaily = data.avg_daily_accuracy;
     const countPart = `积存金 · 共 ${data.count || 0} 条`;
     if (rate == null) {
-      els.forecastMeta.innerHTML = `${countPart} · ${formatProb(null, { label: "准确概率" })} <span class="muted">（尚无已收盘目标日）</span>`;
+      els.forecastMeta.innerHTML = `${countPart} · ${formatProb(null, { label: "区间命中率" })} <span class="muted">（尚无已收盘目标日）</span>`;
     } else {
-      els.forecastMeta.innerHTML = `${countPart} · ${formatProb(rate, { label: "准确概率" })} <span class="muted">（${hits}/${scored}）</span>`;
+      const avgPart =
+        avgDaily == null
+          ? ""
+          : ` · ${formatProb(avgDaily, { label: "日均准确率" })}`;
+      els.forecastMeta.innerHTML = `${countPart} · ${formatProb(rate, { label: "区间命中率" })} <span class="muted">（${hits}/${scored}）</span>${avgPart}`;
     }
     const rows = data.items || [];
     if (!rows.length) {
@@ -518,10 +523,11 @@
           r.error == null
             ? "—"
             : `<span class="${clsChange(r.error)}">${r.error >= 0 ? "+" : ""}${fmt(r.error)}</span>`;
+        const dayAcc = r.daily_accuracy ?? r.accuracy_prob;
         const conf =
-          r.confidence == null
+          dayAcc == null
             ? `<span class="badge-na">—</span>`
-            : formatProb(r.confidence, { label: "" });
+            : formatProb(dayAcc, { label: "" });
         return `<tr>
           <td>${r.target_date}</td>
           <td>${fmt(r.high)}</td>

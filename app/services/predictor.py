@@ -163,10 +163,21 @@ def predict_price(df: pd.DataFrame, symbol: str, horizon_days: int = 7) -> Predi
     final_price = points[-1].predicted
     change_pct = (final_price - current_price) / current_price * 100
 
-    # 置信：样本越多、残差越小越高
-    sample_factor = min(1.0, len(train) / 200)
-    noise_factor = max(0.2, 1.0 - min(resid_std / max(current_price, 1e-6) * 20, 0.7))
-    confidence = round(float(0.35 + 0.4 * sample_factor + 0.25 * noise_factor), 3)
+    # 模型自评置信（非回测命中率）：残差越大越低，通常落在约 55%~82%
+    vol_ratio = resid_std / max(current_price, 1e-6)
+    sample_factor = min(1.0, len(train) / 220)
+    confidence = round(
+        float(
+            max(
+                0.55,
+                min(
+                    0.82,
+                    0.78 * sample_factor + 0.12 - min(vol_ratio * 18.0, 0.28),
+                ),
+            )
+        ),
+        3,
+    )
 
     importance = {
         name: round(float(w), 4)
