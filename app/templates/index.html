@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }} · 黄金走势预测</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div class="bg-mesh" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name">{{ app_name }}</span>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" data-symbol="LONDON_GOLD">伦敦金</button>
+      <button class="nav-btn" data-symbol="ZHESHANG_GOLD">浙商积存金</button>
+      <button class="nav-btn" data-view="compare">品种对比</button>
+    </nav>
+    <button id="btnRefresh" class="ghost-btn" type="button">刷新行情</button>
+  </header>
+
+  <main>
+    <section class="hero" id="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">London Gold · CZBank Accumulated Gold</p>
+        <h1 id="heroTitle">Gold Insight</h1>
+        <p class="hero-lead" id="heroLead">双品种黄金走势洞察与统计预测，辅助你看清趋势，而不是替你下单。</p>
+        <div class="hero-cta">
+          <label class="field">
+            <span>预测周期</span>
+            <select id="horizon">
+              <option value="1">明日</option>
+              <option value="7" selected>7 日</option>
+              <option value="14">14 日</option>
+              <option value="30">30 日</option>
+            </select>
+          </label>
+          <button id="btnPredict" class="primary-btn" type="button">生成预测</button>
+        </div>
+        <p class="disclaimer" id="topDisclaimer">预测不构成投资建议，请独立判断并控制仓位。</p>
+      </div>
+      <div class="hero-quotes" id="quoteCards">
+        <div class="quote-skeleton"></div>
+        <div class="quote-skeleton"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="chartPanel">
+      <div class="panel-head">
+        <h2 id="chartTitle">走势与技术面</h2>
+        <div class="chip-row" id="signalChips"></div>
+      </div>
+      <div id="priceChart" class="chart"></div>
+    </section>
+
+    <section class="grid-2">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>预测结果</h2>
+          <span class="muted" id="predictMeta">选择周期后生成</span>
+        </div>
+        <div id="predictSummary" class="predict-summary empty">等待预测…</div>
+        <div id="predictChart" class="chart chart-sm"></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head">
+          <h2>模型关注特征</h2>
+          <span class="muted">Feature Importance</span>
+        </div>
+        <div id="importanceChart" class="chart chart-sm"></div>
+        <ul class="notes" id="signalNotes"></ul>
+      </article>
+    </section>
+
+    <section class="panel hidden" id="comparePanel">
+      <div class="panel-head">
+        <h2>伦敦金 vs 浙商积存金</h2>
+        <span class="muted" id="corrMeta">相对走势（首日=100）</span>
+      </div>
+      <div id="compareChart" class="chart"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>{{ app_name }} v{{ version }}</span>
+    <span>数据源：Yahoo Finance / 京东金融 · 仅供研究学习</span>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
