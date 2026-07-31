@@ -57,8 +57,59 @@
       </div>
       <div class="hero-quotes" id="quoteCards">
         <div class="quote-skeleton"></div>
-        <div class="quote-skeleton"></div>
       </div>
+    </section>
+
+    <section class="grid-2">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>预测结果</h2>
+          <span class="muted" id="predictMeta">选择周期后生成</span>
+        </div>
+        <div id="predictSummary" class="predict-summary empty">等待预测…</div>
+        <p class="chart-units muted">左轴：美元/盎司 · 右轴：元/克</p>
+        <div id="predictChart" class="chart chart-predict"></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head">
+          <h2>积存金预测历史</h2>
+          <span class="muted" id="forecastMeta">按目标日回溯浙商积存金高低点</span>
+        </div>
+        <div class="forecast-filters">
+          <label class="field">
+            <span>目标日起</span>
+            <input type="date" id="forecastStart" title="按预测的目标交易日筛选，不是生成日" />
+          </label>
+          <label class="field">
+            <span>目标日止</span>
+            <input type="date" id="forecastEnd" title="按预测的目标交易日筛选，不是生成日" />
+          </label>
+          <button id="btnForecastQuery" class="ghost-btn" type="button">查询</button>
+          <button id="btnBackfillRange" class="ghost-btn" type="button" title="用所选日期区间回放积存金预测并重算准确率">按区间回测重算</button>
+        </div>
+        <p class="muted forecast-hint">
+          固定浙商积存金。准确率＝实际收盘落在「预测低～预测高」内的比例；单行「准确/偏差」表示该目标日是否命中区间。选日期后可回测重算。
+        </p>
+        <div class="forecast-table-wrap">
+          <table class="forecast-table" id="forecastTable">
+            <thead>
+              <tr>
+                <th>目标日</th>
+                <th>预测高</th>
+                <th>预测低</th>
+                <th>预测中</th>
+                <th>实际收盘</th>
+                <th>误差</th>
+                <th>准确</th>
+                <th>生成日</th>
+              </tr>
+            </thead>
+            <tbody id="forecastBody">
+              <tr><td colspan="8" class="muted">暂无数据，生成预测或按区间回测后显示</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
     </section>
 
     <section class="panel" id="chartPanel">
@@ -70,57 +121,10 @@
       <ul class="notes" id="signalNotes"></ul>
     </section>
 
-    <section class="grid-2">
-      <article class="panel">
-        <div class="panel-head">
-          <h2>预测结果</h2>
-          <span class="muted" id="predictMeta">选择周期后生成</span>
-        </div>
-        <div id="predictSummary" class="predict-summary empty">等待预测…</div>
-        <div id="predictChart" class="chart chart-sm"></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head">
-          <h2>预测历史</h2>
-          <span class="muted" id="forecastMeta">按目标日回溯高低点</span>
-        </div>
-        <div class="forecast-filters">
-          <label class="field">
-            <span>开始日期</span>
-            <input type="date" id="forecastStart" />
-          </label>
-          <label class="field">
-            <span>结束日期</span>
-            <input type="date" id="forecastEnd" />
-          </label>
-          <button id="btnForecastQuery" class="ghost-btn" type="button">查询</button>
-        </div>
-        <div class="forecast-table-wrap">
-          <table class="forecast-table" id="forecastTable">
-            <thead>
-              <tr>
-                <th>目标日</th>
-                <th>预测高</th>
-                <th>预测低</th>
-                <th>预测中</th>
-                <th>实际收盘</th>
-                <th>误差</th>
-                <th>落带</th>
-                <th>生成日</th>
-              </tr>
-            </thead>
-            <tbody id="forecastBody">
-              <tr><td colspan="8" class="muted">暂无数据，生成预测后自动归档</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-    </section>
-
     <section class="panel hidden" id="comparePanel">
       <div class="panel-head">
         <h2>伦敦金 vs 浙商积存金</h2>
-        <span class="muted" id="corrMeta">相对走势（首日=100）</span>
+        <span class="muted" id="corrMeta">真实价格双轴对比</span>
       </div>
       <div id="compareChart" class="chart"></div>
     </section>

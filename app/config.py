@@ -39,9 +39,19 @@ class Settings(BaseSettings):
     # 盎司→克
     troy_oz_to_gram: float = 31.1034768
 
+    # 上海黄金交易所 · 黄金9999（东财），作积存金人民币日线骨架
+    au9999_eastmoney_secid: str = "118.AU9999"
+
+    # 预测带宽：残差 z 分位 + ATR 放大 + 价格比例地板（约覆盖日常波动）
+    forecast_band_z: float = 2.0  # ~95% 正态分位（原 1.64 过紧）
+    forecast_band_atr_mult: float = 1.2
+    forecast_band_floor_pct: float = 0.012  # 至少约 ±1.2% * √step
+
     # 定时采集（分钟）
     quote_interval_minutes: int = 5
     history_sync_hours: int = 6
+    # 自动重算预测（小时）
+    forecast_interval_hours: int = 3
 
     # 预测默认回看天数
     lookback_days: int = 365

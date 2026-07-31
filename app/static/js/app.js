@@ -4,7 +4,12 @@
     view: "product",
     quotes: [],
     history: null,
+    londonHistory: null,
+    zheshangHistory: null,
+    londonPrediction: null,
+    zheshangPrediction: null,
     prediction: null,
+    entryExit: null,
     quoteTimer: null,
     quoteRefreshing: false,
     quoteIntervalMs: 3000,
@@ -36,6 +41,9 @@
   const predictChart = echarts.init(document.getElementById("predictChart"));
   const compareChart = echarts.init(document.getElementById("compareChart"));
 
+  /** 预测历史 / 回测固定用积存金，不跟上方品种 Tab 切换 */
+  const FORECAST_HISTORY_SYMBOL = "ZHESHANG_GOLD";
+
   const productMeta = {
     LONDON_GOLD: {
       title: "伦敦金",
@@ -47,11 +55,14 @@
     },
   };
 
-  async function api(path) {
-    const res = await fetch(path);
+  async function api(path, options = {}) {
+    const res = await fetch(path, options);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || res.statusText);
+      const detail = err.detail;
+      throw new Error(
+        typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : res.statusText
+      );
     }
     return res.json();
   }
@@ -77,11 +88,75 @@
     els.liveText.textContent = text;
   }
 
+  function renderEntryExit(data) {
+    const board = document.getElementById("entryExitCard");
+    if (!board) return;
+
+    if (!data || data.entry == null || data.exit == null) {
+      board.innerHTML = `
+        <div class="quote-board-head">
+          <span>浙商积存金交易点</span>
+        </div>
+        <div class="muted">生成预测后显示上车/下车点</div>
+      `;
+      return;
+    }
+
+    board.innerHTML = `
+      <div class="quote-board-head">
+        <span>浙商积存金交易点</span>
+      </div>
+      <div class="quote-rows">
+        <div class="quote-row">
+          <div class="name">上车点</div>
+          <div class="price entry-price">${fmt(data.entry)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
+          <div class="meta">
+            <span class="muted">预测最低</span>
+            <span class="muted">中枢 ${fmt(data.mid)}</span>
+          </div>
+        </div>
+        <div class="quote-row">
+          <div class="name">下车点</div>
+          <div class="price exit-price">${fmt(data.exit)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
+          <div class="meta">
+            <span class="muted">预测最高</span>
+            <span class="muted">现价 ${data.live == null ? "--" : fmt(data.live)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+    // 现价仅作对照展示；每次行情刷新时只更新现价文案，不改交易点
+    const liveEl = board.querySelector(".quote-row:last-child .meta span:last-child");
+    if (liveEl) liveEl.dataset.role = "live-price";
+  }
+
+  function patchEntryExitLivePrice() {
+    const board = document.getElementById("entryExitCard");
+    if (!board || !state.entryExit) return;
+    const zs = (state.quotes || []).find((q) => q.symbol === "ZHESHANG_GOLD");
+    if (!zs) return;
+    state.entryExit.live = zs.price;
+    const liveEl = board.querySelector('[data-role="live-price"]');
+    if (liveEl) liveEl.textContent = `现价 ${fmt(zs.price)}`;
+  }
+
+  async function loadEntryExit({ silent = false } = {}) {
+    try {
+      const data = await api("/api/entry-exit");
+      state.entryExit = data;
+      renderEntryExit(data);
+    } catch (e) {
+      if (!silent) {
+        renderEntryExit(null);
+      }
+    }
+  }
+
   function renderQuotes(items, { silent = false } = {}) {
     const prevMap = Object.fromEntries((state.quotes || []).map((q) => [q.symbol, q.price]));
     state.quotes = items || [];
-    els.quoteCards.innerHTML = state.quotes
-      .map((q, i) => {
+    const rows = state.quotes
+      .map((q) => {
         const pct = q.change_pct;
         const sign = pct != null && pct >= 0 ? "+" : "";
         const prev = prevMap[q.symbol];
@@ -90,16 +165,43 @@
           flash = Number(q.price) > Number(prev) ? "flash-up" : "flash-down";
         }
         return `
-          <article class="quote-card" style="animation-delay:${silent ? 0 : i * 0.08}s">
-            <div class="name">${q.name}<span class="live-tag">LIVE</span></div>
-            <div class="price ${flash}">${fmt(q.price)} <small style="font-size:0.9rem;color:#6b7785">${q.unit || ""}</small></div>
+          <div class="quote-row">
+            <div class="name">${q.name}</div>
+            <div class="price ${flash}">${fmt(q.price)} <small style="font-size:0.85rem;color:#6b7785">${q.unit || ""}</small></div>
             <div class="meta">
               <span class="${clsChange(pct)}">${sign}${fmt(pct, 2)}%</span>
               <span>${new Date(q.ts).toLocaleTimeString("zh-CN")}</span>
             </div>
-          </article>`;
+          </div>`;
       })
       .join("");
+
+    const latestTs = state.quotes[0]?.ts
+      ? new Date(state.quotes[0].ts).toLocaleTimeString("zh-CN")
+      : "--";
+
+    els.quoteCards.innerHTML = `
+      <article class="quote-board" style="animation-delay:${silent ? 0 : 0.05}s">
+        <div class="quote-board-head">
+          <span>实时行情</span>
+          <span class="live-tag">LIVE · ${latestTs}</span>
+        </div>
+        <div class="quote-rows">
+          ${rows || `<div class="muted">暂无行情</div>`}
+        </div>
+      </article>
+      <article class="quote-board" id="entryExitCard" style="animation-delay:${silent ? 0 : 0.12}s">
+        <div class="quote-board-head">
+          <span>浙商积存金交易点</span>
+        </div>
+        <div class="muted">生成预测后显示上车/下车点</div>
+      </article>
+    `;
+    // 上车/下车点只展示缓存的预测结果，不随实时行情重算
+    if (state.entryExit) {
+      renderEntryExit(state.entryExit);
+      patchEntryExitLivePrice();
+    }
   }
 
   async function loadQuotes({ silent = false } = {}) {
@@ -204,72 +306,189 @@
     `;
     els.topDisclaimer.textContent = data.disclaimer;
 
-    const hist = (state.history?.items || []).slice(-60);
-    const histDates = hist.map((d) => d.date);
-    const histClose = hist.map((d) => d.close);
-    const predDates = data.points.map((p) => p.date);
-    const pred = data.points.map((p) => p.predicted);
-    const lower = data.points.map((p) => p.lower);
-    const upper = data.points.map((p) => p.upper);
+    const londonHist = ((state.londonHistory && state.londonHistory.items) || []).slice(-60);
+    const zsHist = ((state.zheshangHistory && state.zheshangHistory.items) || []).slice(-60);
+    const baseDates = (londonHist.length ? londonHist : zsHist).map((d) => d.date);
 
-    predictChart.setOption({
-      animationDuration: 650,
-      tooltip: { trigger: "axis" },
-      legend: { data: ["历史", "预测", "上限", "下限"] },
-      grid: { left: 48, right: 20, top: 36, bottom: 28 },
-      xAxis: { type: "category", data: [...histDates, ...predDates] },
-      yAxis: { type: "value", scale: true, splitLine: { lineStyle: { color: "#e6ebf0" } } },
-      series: [
-        {
-          name: "历史",
-          type: "line",
-          data: [...histClose, ...predDates.map(() => null)],
-          showSymbol: false,
-          lineStyle: { color: "#132033", width: 2 },
-        },
-        {
-          name: "预测",
-          type: "line",
-          data: [...histClose.map(() => null).slice(0, -1), histClose.at(-1), ...pred],
-          showSymbol: false,
-          lineStyle: { color: "#b08d3e", width: 2.2, type: "solid" },
-        },
-        {
-          name: "上限",
-          type: "line",
-          data: [...histDates.map(() => null), ...upper],
-          showSymbol: false,
-          lineStyle: { color: "#9aa7b5", type: "dashed", width: 1 },
-        },
-        {
-          name: "下限",
-          type: "line",
-          data: [...histDates.map(() => null), ...lower],
-          showSymbol: false,
-          lineStyle: { color: "#9aa7b5", type: "dashed", width: 1 },
-        },
-      ],
-    });
+    const londonPred = state.londonPrediction || (state.symbol === "LONDON_GOLD" ? data : null);
+    const zsPred = state.zheshangPrediction || (state.symbol === "ZHESHANG_GOLD" ? data : null);
+    const mainPred = state.symbol === "ZHESHANG_GOLD" ? zsPred || data : londonPred || data;
+    const predDates = (mainPred?.points || data.points || []).map((p) => p.date);
+    const allDates = [...baseDates, ...predDates];
 
-    // 生成预测后刷新归档表
+    const londonMap = Object.fromEntries(londonHist.map((d) => [d.date, d.close]));
+    const zsMap = Object.fromEntries(zsHist.map((d) => [d.date, d.close]));
+    const londonPredPts = Object.fromEntries((londonPred?.points || []).map((p) => [p.date, p.predicted]));
+    const zsPredPts = Object.fromEntries((zsPred?.points || []).map((p) => [p.date, p.predicted]));
+    const londonUpper = Object.fromEntries((londonPred?.points || []).map((p) => [p.date, p.upper]));
+    const londonLower = Object.fromEntries((londonPred?.points || []).map((p) => [p.date, p.lower]));
+    const zsUpper = Object.fromEntries((zsPred?.points || []).map((p) => [p.date, p.upper]));
+    const zsLower = Object.fromEntries((zsPred?.points || []).map((p) => [p.date, p.lower]));
+
+    // 主曲线：历史收盘 + 预测价连贯
+    const londonSeries = allDates.map((d) =>
+      londonMap[d] != null ? londonMap[d] : londonPredPts[d] != null ? londonPredPts[d] : null
+    );
+    const zsSeries = allDates.map((d) =>
+      zsMap[d] != null ? zsMap[d] : zsPredPts[d] != null ? zsPredPts[d] : null
+    );
+    const londonUpperSeries = allDates.map((d) => (londonUpper[d] != null ? londonUpper[d] : null));
+    const londonLowerSeries = allDates.map((d) => (londonLower[d] != null ? londonLower[d] : null));
+    const zsUpperSeries = allDates.map((d) => (zsUpper[d] != null ? zsUpper[d] : null));
+    const zsLowerSeries = allDates.map((d) => (zsLower[d] != null ? zsLower[d] : null));
+
+    predictChart.setOption(
+      {
+        animationDuration: 650,
+        color: ["#132033", "#c45c26", "#5b7c99", "#5b7c99", "#d4a574", "#d4a574"],
+        tooltip: { trigger: "axis" },
+        legend: {
+          type: "plain",
+          orient: "horizontal",
+          bottom: 4,
+          left: "center",
+          width: "92%",
+          itemWidth: 14,
+          itemHeight: 8,
+          itemGap: 14,
+          textStyle: { fontSize: 11, color: "#3a4a5c" },
+          data: ["伦敦金", "浙商积存金", "伦敦金上限", "伦敦金下限", "积存金上限", "积存金下限"],
+          selectedMode: true,
+        },
+        grid: { left: 52, right: 52, top: 12, bottom: 64 },
+        xAxis: {
+          type: "category",
+          data: allDates,
+          axisLabel: { hideOverlap: true, fontSize: 10 },
+        },
+        yAxis: [
+          {
+            type: "value",
+            scale: true,
+            splitLine: { lineStyle: { color: "#e6ebf0" } },
+            axisLabel: { color: "#132033", fontSize: 10 },
+          },
+          {
+            type: "value",
+            scale: true,
+            position: "right",
+            splitLine: { show: false },
+            axisLabel: { color: "#c45c26", fontSize: 10 },
+          },
+        ],
+        series: [
+          {
+            name: "伦敦金",
+            type: "line",
+            yAxisIndex: 0,
+            data: londonSeries,
+            showSymbol: false,
+            connectNulls: true,
+            lineStyle: { color: "#132033", width: 2.2 },
+            itemStyle: { color: "#132033" },
+          },
+          {
+            name: "浙商积存金",
+            type: "line",
+            yAxisIndex: 1,
+            data: zsSeries,
+            showSymbol: false,
+            connectNulls: true,
+            lineStyle: { color: "#c45c26", width: 2 },
+            itemStyle: { color: "#c45c26" },
+          },
+          {
+            name: "伦敦金上限",
+            type: "line",
+            yAxisIndex: 0,
+            data: londonUpperSeries,
+            showSymbol: false,
+            lineStyle: { color: "#5b7c99", type: "dashed", width: 1.2 },
+            itemStyle: { color: "#5b7c99" },
+          },
+          {
+            name: "伦敦金下限",
+            type: "line",
+            yAxisIndex: 0,
+            data: londonLowerSeries,
+            showSymbol: false,
+            lineStyle: { color: "#5b7c99", type: "dashed", width: 1.2 },
+            itemStyle: { color: "#5b7c99" },
+          },
+          {
+            name: "积存金上限",
+            type: "line",
+            yAxisIndex: 1,
+            data: zsUpperSeries,
+            showSymbol: false,
+            lineStyle: { color: "#d4a574", type: "dashed", width: 1.2 },
+            itemStyle: { color: "#d4a574" },
+          },
+          {
+            name: "积存金下限",
+            type: "line",
+            yAxisIndex: 1,
+            data: zsLowerSeries,
+            showSymbol: false,
+            lineStyle: { color: "#d4a574", type: "dashed", width: 1.2 },
+            itemStyle: { color: "#d4a574" },
+          },
+        ],
+      },
+      true
+    );
+    predictChart.resize();
+
     loadForecastHistory({ silent: true }).catch(() => {});
   }
 
+  async function ensurePeerHistories() {
+    const tasks = [];
+    if (!state.londonHistory?.items?.length) {
+      tasks.push(
+        api("/api/history/LONDON_GOLD?days=180&with_indicators=false").then((d) => {
+          state.londonHistory = d;
+        })
+      );
+    }
+    if (!state.zheshangHistory?.items?.length) {
+      tasks.push(
+        api("/api/history/ZHESHANG_GOLD?days=180&with_indicators=false").then((d) => {
+          state.zheshangHistory = d;
+        })
+      );
+    }
+    if (tasks.length) await Promise.all(tasks);
+  }
+
   function defaultForecastRange() {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - 7);
-    const end2 = new Date();
-    end2.setDate(end.getDate() + 14);
-    const toInput = (d) => d.toISOString().slice(0, 10);
+    // 默认看本月目标日，方便回测准确率；未到月末时 end 用今天
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    if (end > now) end.setTime(now.getTime());
+    const toInput = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
     if (els.forecastStart && !els.forecastStart.value) els.forecastStart.value = toInput(start);
-    if (els.forecastEnd && !els.forecastEnd.value) els.forecastEnd.value = toInput(end2);
+    if (els.forecastEnd && !els.forecastEnd.value) els.forecastEnd.value = toInput(end);
   }
 
   function renderForecastHistory(data) {
-    const hit =
-      data.hit_rate == null ? "--" : `${(data.hit_rate * 100).toFixed(1)}%`;
-    els.forecastMeta.textContent = `共 ${data.count || 0} 条 · 收盘落带率 ${hit}`;
+    const scored = Number(data.scored_count ?? 0);
+    const hits = Number(data.hit_count ?? 0);
+    const rate =
+      data.accuracy_rate == null && data.hit_rate == null
+        ? null
+        : (data.accuracy_rate ?? data.hit_rate);
+    const rateText = rate == null ? "--" : `${(rate * 100).toFixed(1)}%`;
+    els.forecastMeta.textContent =
+      rate == null
+        ? `积存金 · 共 ${data.count || 0} 条 · 准确率 --（尚无已收盘目标日）`
+        : `积存金 · 共 ${data.count || 0} 条 · 准确率 ${rateText}（${hits}/${scored}）`;
     const rows = data.items || [];
     if (!rows.length) {
       els.forecastBody.innerHTML =
@@ -278,12 +497,16 @@
     }
     els.forecastBody.innerHTML = rows
       .map((r) => {
+        const accurate =
+          r.accurate == null && r.close_in_band == null
+            ? null
+            : (r.accurate ?? r.close_in_band);
         const band =
-          r.close_in_band == null
+          accurate == null
             ? `<span class="badge-na">—</span>`
-            : r.close_in_band
-              ? `<span class="badge-yes">是</span>`
-              : `<span class="badge-no">否</span>`;
+            : accurate
+              ? `<span class="badge-yes">准确</span>`
+              : `<span class="badge-no">偏差</span>`;
         const err =
           r.error == null
             ? "—"
@@ -310,7 +533,7 @@
     if (start) qs.set("start", start);
     if (end) qs.set("end", end);
     try {
-      const data = await api(`/api/forecasts/${state.symbol}?${qs.toString()}`);
+      const data = await api(`/api/forecasts/${FORECAST_HISTORY_SYMBOL}?${qs.toString()}`);
       renderForecastHistory(data);
     } catch (e) {
       if (!silent) throw e;
@@ -321,51 +544,110 @@
 
   async function loadHistory() {
     const data = await api(`/api/history/${state.symbol}?days=180`);
+    state.history = data;
+    if (state.symbol === "LONDON_GOLD") state.londonHistory = data;
+    if (state.symbol === "ZHESHANG_GOLD") state.zheshangHistory = data;
     renderHistory(data);
+    try {
+      await ensurePeerHistories();
+    } catch (_) {
+      /* ignore */
+    }
   }
 
-  async function loadPrediction() {
+  async function loadPrediction({ persist = false } = {}) {
     const horizon = els.horizon.value;
     els.predictSummary.classList.add("empty");
     els.predictSummary.textContent = "模型计算中…";
-    const data = await api(`/api/predict/${state.symbol}?horizon=${horizon}`);
-    renderPrediction(data);
+    try {
+      await ensurePeerHistories();
+    } catch (_) {
+      /* ignore */
+    }
+    const persistFlag = persist ? "true" : "false";
+    const [londonPred, zsPred] = await Promise.all([
+      api(`/api/predict/LONDON_GOLD?horizon=${horizon}&persist=${persistFlag}`),
+      api(`/api/predict/ZHESHANG_GOLD?horizon=${horizon}&persist=${persistFlag}`),
+    ]);
+    state.londonPrediction = londonPred;
+    state.zheshangPrediction = zsPred;
+    const main = state.symbol === "ZHESHANG_GOLD" ? zsPred : londonPred;
+    renderPrediction(main);
+    // 只有落库重算后才刷新交易点；否则只读已缓存/库里的交易点
+    if (persist) {
+      await loadEntryExit({ silent: true });
+    } else if (!state.entryExit) {
+      await loadEntryExit({ silent: true });
+    } else {
+      renderEntryExit(state.entryExit);
+    }
   }
 
   async function loadCompare() {
     const data = await api("/api/compare?days=90");
     if (els.corrMeta) {
-      els.corrMeta.textContent = `相对走势（首日=100） · 相关性 ${data.correlation ?? "--"}`;
-    }    const london = data.series.LONDON_GOLD || [];
+      els.corrMeta.textContent = `真实价格双轴 · 日收益相关性 ${data.correlation ?? "--"}`;
+    }
+    const london = data.series.LONDON_GOLD || [];
     const zs = data.series.ZHESHANG_GOLD || [];
-    compareChart.setOption({
-      animationDuration: 700,
-      tooltip: { trigger: "axis" },
-      legend: { data: ["伦敦金", "浙商积存金"] },
-      grid: { left: 48, right: 24, top: 40, bottom: 36 },
-      xAxis: {
-        type: "category",
-        data: london.map((d) => d.date),
-        boundaryGap: false,
+    const dates = london.map((d) => d.date);
+    compareChart.setOption(
+      {
+        animationDuration: 700,
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "cross" },
+        },
+        legend: { data: ["伦敦金", "浙商积存金"] },
+        grid: { left: 56, right: 56, top: 40, bottom: 36 },
+        xAxis: {
+          type: "category",
+          data: dates,
+          boundaryGap: false,
+        },
+        yAxis: [
+          {
+            type: "value",
+            name: "伦敦金(美元/盎司)",
+            scale: true,
+            position: "left",
+            splitLine: { lineStyle: { color: "#e6ebf0" } },
+            axisLabel: { color: "#132033" },
+            nameTextStyle: { color: "#132033", fontSize: 11 },
+          },
+          {
+            type: "value",
+            name: "积存金(元/克)",
+            scale: true,
+            position: "right",
+            splitLine: { show: false },
+            axisLabel: { color: "#b08d3e" },
+            nameTextStyle: { color: "#b08d3e", fontSize: 11 },
+          },
+        ],
+        series: [
+          {
+            name: "伦敦金",
+            type: "line",
+            yAxisIndex: 0,
+            showSymbol: false,
+            data: london.map((d) => d.close),
+            lineStyle: { width: 2.2, color: "#132033" },
+            itemStyle: { color: "#132033" },
+          },
+          {
+            name: "浙商积存金",
+            type: "line",
+            yAxisIndex: 1,
+            showSymbol: false,
+            data: zs.map((d) => d.close),
+            lineStyle: { width: 2.2, color: "#b08d3e" },
+            itemStyle: { color: "#b08d3e" },
+          },
+        ],
       },
-      yAxis: { type: "value", scale: true, splitLine: { lineStyle: { color: "#e6ebf0" } } },
-      series: [
-        {
-          name: "伦敦金",
-          type: "line",
-          showSymbol: false,
-          data: london.map((d) => d.indexed),
-          lineStyle: { width: 2.2, color: "#132033" },
-        },
-        {
-          name: "浙商积存金",
-          type: "line",
-          showSymbol: false,
-          data: zs.map((d) => d.indexed),
-          lineStyle: { width: 2.2, color: "#b08d3e" },
-        },
-      ],
-    });
+      true
+    );
     compareChart.resize();
   }
 
@@ -384,13 +666,13 @@
       document.querySelector(".grid-2").classList.add("hidden");
       els.comparePanel.classList.remove("hidden");
       els.heroTitle.textContent = "Gold Insight";
-      els.heroLead.textContent = "把伦敦金与浙商积存金放在同一相对尺度上，观察联动与背离。";
+      els.heroLead.textContent = "直接对照伦敦金与浙商积存金的真实价格走势（左右双轴，单位不同）。";
       loadCompare().catch((e) => alert(e.message));
     } else {
       els.comparePanel.classList.add("hidden");
       els.chartPanel.classList.remove("hidden");
       document.querySelector(".grid-2").classList.remove("hidden");
-      Promise.all([loadHistory(), loadPrediction(), loadForecastHistory({ silent: true })]).catch((e) =>
+      Promise.all([loadHistory(), loadPrediction({ persist: false }), loadForecastHistory({ silent: true })]).catch((e) =>
         alert(e.message)
       );
     }
@@ -406,10 +688,46 @@
     loadQuotes({ silent: true }).catch((e) => alert(e.message));
   });
   document.getElementById("btnPredict").addEventListener("click", () => {
-    loadPrediction().catch((e) => alert(e.message));
+    loadPrediction({ persist: true }).catch((e) => alert(e.message));
   });
   document.getElementById("btnForecastQuery").addEventListener("click", () => {
     loadForecastHistory().catch((e) => alert(e.message));
+  });
+  document.getElementById("btnBackfillRange").addEventListener("click", async () => {
+    const btn = document.getElementById("btnBackfillRange");
+    const start = els.forecastStart?.value;
+    const end = els.forecastEnd?.value;
+    if (!start || !end) {
+      alert("请先选择目标日起止日期");
+      return;
+    }
+    if (start > end) {
+      alert("开始日期不能晚于结束日期");
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "回测中…";
+    try {
+      const data = await api(
+        `/api/forecasts/${FORECAST_HISTORY_SYMBOL}/backfill?start=${start}&end=${end}&horizon=7`,
+        { method: "POST" }
+      );
+      const rate = data.accuracy_rate ?? data.hit_rate;
+      const hit = rate == null ? "--" : `${(rate * 100).toFixed(1)}%`;
+      const scored = data.preview_scored ?? data.scored_count;
+      const hits = data.preview_hits ?? data.hit_count;
+      const detail =
+        scored != null && hits != null ? `（${hits}/${scored}）` : "";
+      alert(
+        `积存金回测完成：回放 ${data.runs} 个交易日，写入 ${data.saved_points} 条点位。\n区间准确率：${hit}${detail}`
+      );
+      await loadForecastHistory();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "按区间回测重算";
+    }
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -433,7 +751,8 @@
       await loadQuotes();
       startQuotePolling();
       await loadHistory();
-      await loadPrediction();
+      await loadEntryExit({ silent: true });
+      await loadPrediction({ persist: false });
       await loadForecastHistory({ silent: true });
     } catch (e) {
       setLiveStatus("error", "连接失败");

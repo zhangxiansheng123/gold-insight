@@ -10,6 +10,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 
 from app.services.indicators import add_indicators
+from app.config import settings
 
 
 @dataclass
@@ -38,6 +39,19 @@ DISCLAIMER = (
     "预测仅基于历史价格与技术特征的统计模型，不构成投资建议。"
     "黄金受地缘、利率、汇率与政策等多因素影响，实盘请自行判断并控制风险。"
 )
+
+
+def _prediction_band(*, resid_std: float, atr: float, price: float, step: int) -> float:
+    """
+    合成预测半宽：残差带 × ATR 带 × 价格比例地板，取最大。
+    比单纯 resid*1.64 更能覆盖金价日常跳空。
+    """
+    step = max(1, int(step))
+    grow = float(np.sqrt(step))
+    resid_band = resid_std * grow * float(settings.forecast_band_z)
+    atr_band = max(0.0, atr) * grow * float(settings.forecast_band_atr_mult)
+    floor_band = abs(price) * float(settings.forecast_band_floor_pct) * grow
+    return float(max(resid_band, atr_band, floor_band, 0.0))
 
 
 def _feature_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -116,7 +130,12 @@ def predict_price(df: pd.DataFrame, symbol: str, horizon_days: int = 7) -> Predi
         predicted = float(model.predict(x_scaled)[0])
         # 轻微均值回归，避免长周期发散
         predicted = 0.85 * predicted + 0.15 * current_price
-        band = resid_std * np.sqrt(step) * 1.64  # ~90% 粗区间
+        band = _prediction_band(
+            resid_std=resid_std,
+            atr=float(last_row.get("atr14") or 0.0),
+            price=predicted,
+            step=step,
+        )
         cursor_date = cursor_date + timedelta(days=1)
         # 跳过周末（黄金周末休市近似）
         while cursor_date.weekday() >= 5:

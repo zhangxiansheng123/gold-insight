@@ -32,16 +32,23 @@ async def _job_collect_quotes() -> None:
         logger.exception("quote collection failed")
 
 
-async def _job_daily_forecast() -> None:
+async def _job_refresh_forecast() -> None:
+    """定时重算双品种预测并落库（供上车/下车点与预测历史使用）。"""
     try:
         import asyncio
 
         from app.services.forecast_store import daily_forecast_job
 
+        # 先刷新行情，保证预测锚在最新价
+        try:
+            await collect_live_quotes()
+        except Exception:  # noqa: BLE001
+            logger.exception("pre-forecast quote refresh failed")
+
         result = await asyncio.to_thread(daily_forecast_job)
-        logger.info("daily forecast archived: %s", result)
+        logger.info("forecast refreshed: %s", result)
     except Exception:  # noqa: BLE001
-        logger.exception("daily forecast failed")
+        logger.exception("forecast refresh failed")
 
 
 @asynccontextmanager
@@ -54,9 +61,9 @@ async def lifespan(_: FastAPI):
     except Exception:  # noqa: BLE001
         logger.exception("bootstrap failed")
 
-    # 启动时也落一版预测，方便立刻回溯
+    # 启动时先算一版，方便立刻看上车/下车与预测图
     try:
-        await _job_daily_forecast()
+        await _job_refresh_forecast()
     except Exception:  # noqa: BLE001
         logger.exception("startup forecast failed")
 
@@ -68,14 +75,18 @@ async def lifespan(_: FastAPI):
         replace_existing=True,
     )
     scheduler.add_job(
-        _job_daily_forecast,
-        "cron",
-        hour=8,
-        minute=5,
-        id="daily_forecast",
+        _job_refresh_forecast,
+        "interval",
+        hours=settings.forecast_interval_hours,
+        id="refresh_forecast",
         replace_existing=True,
     )
     scheduler.start()
+    logger.info(
+        "scheduler started: quotes every %sm, forecast every %sh",
+        settings.quote_interval_minutes,
+        settings.forecast_interval_hours,
+    )
     yield
     scheduler.shutdown(wait=False)
 
