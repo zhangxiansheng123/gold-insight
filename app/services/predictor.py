@@ -11,6 +11,11 @@ from sklearn.preprocessing import StandardScaler
 
 from app.services.indicators import add_indicators
 from app.config import settings
+from app.services.macro_features import (
+    MACRO_FEATURE_COLS,
+    attach_macro_features,
+    macro_features_on_date,
+)
 
 
 @dataclass
@@ -36,8 +41,8 @@ class PredictionResult:
 
 
 DISCLAIMER = (
-    "预测仅基于历史价格与技术特征的统计模型，不构成投资建议。"
-    "黄金受地缘、利率、汇率与政策等多因素影响，实盘请自行判断并控制风险。"
+    "预测基于历史价格、技术指标，以及汇率(USDCNY)与美联储议息日历等宏观特征，不构成投资建议。"
+    "黄金仍受地缘、实际利率与风险偏好等影响，实盘请自行判断并控制风险。"
 )
 
 
@@ -55,7 +60,8 @@ def _prediction_band(*, resid_std: float, atr: float, price: float, step: int) -
 
 
 def _feature_frame(df: pd.DataFrame) -> pd.DataFrame:
-    data = add_indicators(df)
+    data = attach_macro_features(df)
+    data = add_indicators(data)
     data["ret1"] = data["close"].pct_change()
     data["ret5"] = data["close"].pct_change(5)
     data["ret10"] = data["close"].pct_change(10)
@@ -82,6 +88,7 @@ FEATURE_COLS = [
     "ret10",
     "vol10",
     "hl_range",
+    *MACRO_FEATURE_COLS,
 ]
 
 
@@ -123,6 +130,11 @@ def predict_price(df: pd.DataFrame, symbol: str, horizon_days: int = 7) -> Predi
 
     last_row = working.dropna(subset=FEATURE_COLS).iloc[-1]
     current_features = last_row[FEATURE_COLS].astype(float).values.reshape(1, -1)
+    last_fx = {
+        "fx_ret1": float(last_row.get("fx_ret1") or 0.0),
+        "fx_ret5": float(last_row.get("fx_ret5") or 0.0),
+        "fx_vol10": float(last_row.get("fx_vol10") or 0.0),
+    }
 
     predicted = current_price
     for step in range(1, horizon_days + 1):
@@ -158,6 +170,10 @@ def predict_price(df: pd.DataFrame, symbol: str, horizon_days: int = 7) -> Predi
         for name, w in (("ma5", 5), ("ma10", 10), ("ma20", 20)):
             idx = FEATURE_COLS.index(name)
             next_feats[idx] = (next_feats[idx] * (w - 1) + predicted) / w
+        # 宏观：汇率沿用末日观测；FOMC 按目标日日历更新
+        macro = macro_features_on_date(cursor_date, last_fx)
+        for name, val in macro.items():
+            next_feats[FEATURE_COLS.index(name)] = val
         current_features = next_feats.reshape(1, -1)
 
     final_price = points[-1].predicted

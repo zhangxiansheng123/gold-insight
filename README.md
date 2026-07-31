@@ -54,6 +54,7 @@ mysql+pymysql://root:123456@localhost:3306/gold_insight
 - **伦敦金**：实时用现货源（goldprice.dev / gold-api.com，约 XAU/USD）；历史日线辅助用 Yahoo `GC=F`，当日会被现货价校准。
 - **浙商积存金**：京东金融 `stdLatestPrice`（SKU `1961543816`），单位元/克。
 - **积存金长历史**：优先东财「黄金9999」日线并按京东现价锚定；失败则用「伦敦金 × 逐日美元兑人民币」估算；有采集快照的交易日用真实 OHLC 覆盖。
+- **宏观特征（已接入预测）**：美元兑人民币日涨跌/波动（Yahoo `USDCNY=X`）+ 美联储 FOMC 决议日标记与距下次议息天数。
 
 ## 目录结构
 

@@ -120,13 +120,14 @@
     board.innerHTML = `
       <div class="quote-board-head">
         <span>浙商积存金交易点</span>
+        <span class="muted">${data.target_date ? `目标日 ${data.target_date}` : ""}${data.made_on ? ` · 生成 ${data.made_on}` : ""}</span>
       </div>
       <div class="quote-rows">
         <div class="quote-row">
           <div class="name">上车点</div>
           <div class="price entry-price">${fmt(data.entry)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
           <div class="meta">
-            <span class="muted">预测最低</span>
+            <span class="muted">预测最低（区间下限）</span>
             <span class="muted">中枢 ${fmt(data.mid)}</span>
           </div>
         </div>
@@ -134,7 +135,7 @@
           <div class="name">下车点</div>
           <div class="price exit-price">${fmt(data.exit)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
           <div class="meta">
-            <span class="muted">预测最高</span>
+            <span class="muted">预测最高（区间上限）</span>
             <span class="muted">现价 ${data.live == null ? "--" : fmt(data.live)}</span>
           </div>
         </div>
