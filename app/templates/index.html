@@ -67,6 +67,7 @@
         <div class="chip-row" id="signalChips"></div>
       </div>
       <div id="priceChart" class="chart"></div>
+      <ul class="notes" id="signalNotes"></ul>
     </section>
 
     <section class="grid-2">
@@ -80,11 +81,39 @@
       </article>
       <article class="panel">
         <div class="panel-head">
-          <h2>模型关注特征</h2>
-          <span class="muted">Feature Importance</span>
+          <h2>预测历史</h2>
+          <span class="muted" id="forecastMeta">按目标日回溯高低点</span>
         </div>
-        <div id="importanceChart" class="chart chart-sm"></div>
-        <ul class="notes" id="signalNotes"></ul>
+        <div class="forecast-filters">
+          <label class="field">
+            <span>开始日期</span>
+            <input type="date" id="forecastStart" />
+          </label>
+          <label class="field">
+            <span>结束日期</span>
+            <input type="date" id="forecastEnd" />
+          </label>
+          <button id="btnForecastQuery" class="ghost-btn" type="button">查询</button>
+        </div>
+        <div class="forecast-table-wrap">
+          <table class="forecast-table" id="forecastTable">
+            <thead>
+              <tr>
+                <th>目标日</th>
+                <th>预测高</th>
+                <th>预测低</th>
+                <th>预测中</th>
+                <th>实际收盘</th>
+                <th>误差</th>
+                <th>落带</th>
+                <th>生成日</th>
+              </tr>
+            </thead>
+            <tbody id="forecastBody">
+              <tr><td colspan="8" class="muted">暂无数据，生成预测后自动归档</td></tr>
+            </tbody>
+          </table>
+        </div>
       </article>
     </section>
 

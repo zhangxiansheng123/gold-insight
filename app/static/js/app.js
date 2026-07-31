@@ -25,11 +25,15 @@
     topDisclaimer: document.getElementById("topDisclaimer"),
     liveStatus: document.getElementById("liveStatus"),
     liveText: document.getElementById("liveText"),
+    forecastMeta: document.getElementById("forecastMeta"),
+    forecastStart: document.getElementById("forecastStart"),
+    forecastEnd: document.getElementById("forecastEnd"),
+    forecastBody: document.getElementById("forecastBody"),
+    corrMeta: document.getElementById("corrMeta"),
   };
 
   const priceChart = echarts.init(document.getElementById("priceChart"));
   const predictChart = echarts.init(document.getElementById("predictChart"));
-  const importanceChart = echarts.init(document.getElementById("importanceChart"));
   const compareChart = echarts.init(document.getElementById("compareChart"));
 
   const productMeta = {
@@ -247,26 +251,72 @@
       ],
     });
 
-    const entries = Object.entries(data.feature_importance || {});
-    importanceChart.setOption({
-      animationDuration: 650,
-      grid: { left: 90, right: 24, top: 10, bottom: 24 },
-      xAxis: { type: "value", splitLine: { lineStyle: { color: "#e6ebf0" } } },
-      yAxis: { type: "category", data: entries.map(([k]) => k).reverse() },
-      series: [
-        {
-          type: "bar",
-          data: entries.map(([, v]) => v).reverse(),
-          itemStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-              { offset: 0, color: "#d7c08a" },
-              { offset: 1, color: "#8a6a28" },
-            ]),
-            borderRadius: [0, 6, 6, 0],
-          },
-        },
-      ],
-    });
+    // 生成预测后刷新归档表
+    loadForecastHistory({ silent: true }).catch(() => {});
+  }
+
+  function defaultForecastRange() {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 7);
+    const end2 = new Date();
+    end2.setDate(end.getDate() + 14);
+    const toInput = (d) => d.toISOString().slice(0, 10);
+    if (els.forecastStart && !els.forecastStart.value) els.forecastStart.value = toInput(start);
+    if (els.forecastEnd && !els.forecastEnd.value) els.forecastEnd.value = toInput(end2);
+  }
+
+  function renderForecastHistory(data) {
+    const hit =
+      data.hit_rate == null ? "--" : `${(data.hit_rate * 100).toFixed(1)}%`;
+    els.forecastMeta.textContent = `共 ${data.count || 0} 条 · 收盘落带率 ${hit}`;
+    const rows = data.items || [];
+    if (!rows.length) {
+      els.forecastBody.innerHTML =
+        `<tr><td colspan="8" class="muted">该区间暂无预测归档</td></tr>`;
+      return;
+    }
+    els.forecastBody.innerHTML = rows
+      .map((r) => {
+        const band =
+          r.close_in_band == null
+            ? `<span class="badge-na">—</span>`
+            : r.close_in_band
+              ? `<span class="badge-yes">是</span>`
+              : `<span class="badge-no">否</span>`;
+        const err =
+          r.error == null
+            ? "—"
+            : `<span class="${clsChange(r.error)}">${r.error >= 0 ? "+" : ""}${fmt(r.error)}</span>`;
+        return `<tr>
+          <td>${r.target_date}</td>
+          <td>${fmt(r.high)}</td>
+          <td>${fmt(r.low)}</td>
+          <td>${fmt(r.predicted)}</td>
+          <td>${r.actual_close == null ? "—" : fmt(r.actual_close)}</td>
+          <td>${err}</td>
+          <td>${band}</td>
+          <td>${r.made_on}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  async function loadForecastHistory({ silent = false } = {}) {
+    defaultForecastRange();
+    const start = els.forecastStart?.value;
+    const end = els.forecastEnd?.value;
+    const qs = new URLSearchParams();
+    if (start) qs.set("start", start);
+    if (end) qs.set("end", end);
+    try {
+      const data = await api(`/api/forecasts/${state.symbol}?${qs.toString()}`);
+      renderForecastHistory(data);
+    } catch (e) {
+      if (!silent) throw e;
+      els.forecastBody.innerHTML =
+        `<tr><td colspan="8" class="muted">加载失败：${e.message}</td></tr>`;
+    }
   }
 
   async function loadHistory() {
@@ -284,8 +334,9 @@
 
   async function loadCompare() {
     const data = await api("/api/compare?days=90");
-    els.corrMeta.textContent = `相对走势（首日=100） · 相关性 ${data.correlation ?? "--"}`;
-    const london = data.series.LONDON_GOLD || [];
+    if (els.corrMeta) {
+      els.corrMeta.textContent = `相对走势（首日=100） · 相关性 ${data.correlation ?? "--"}`;
+    }    const london = data.series.LONDON_GOLD || [];
     const zs = data.series.ZHESHANG_GOLD || [];
     compareChart.setOption({
       animationDuration: 700,
@@ -339,7 +390,9 @@
       els.comparePanel.classList.add("hidden");
       els.chartPanel.classList.remove("hidden");
       document.querySelector(".grid-2").classList.remove("hidden");
-      Promise.all([loadHistory(), loadPrediction()]).catch((e) => alert(e.message));
+      Promise.all([loadHistory(), loadPrediction(), loadForecastHistory({ silent: true })]).catch((e) =>
+        alert(e.message)
+      );
     }
   }
 
@@ -355,6 +408,9 @@
   document.getElementById("btnPredict").addEventListener("click", () => {
     loadPrediction().catch((e) => alert(e.message));
   });
+  document.getElementById("btnForecastQuery").addEventListener("click", () => {
+    loadForecastHistory().catch((e) => alert(e.message));
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
@@ -368,16 +424,17 @@
   window.addEventListener("resize", () => {
     priceChart.resize();
     predictChart.resize();
-    importanceChart.resize();
     compareChart.resize();
   });
 
   (async function boot() {
+    defaultForecastRange();
     try {
       await loadQuotes();
       startQuotePolling();
       await loadHistory();
       await loadPrediction();
+      await loadForecastHistory({ silent: true });
     } catch (e) {
       setLiveStatus("error", "连接失败");
       els.quoteCards.innerHTML = `<div class="quote-card">加载失败：${e.message}<br/>可稍后刷新，或检查网络与数据源。</div>`;

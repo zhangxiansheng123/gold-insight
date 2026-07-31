@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Index, Integer, String, create_engine, text
+from sqlalchemy import DateTime, Float, Index, Integer, String, UniqueConstraint, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from app.config import settings
@@ -39,6 +39,30 @@ class DailyBar(Base):
     close: Mapped[float] = mapped_column(Float)
     volume: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(64), default="")
+
+
+class ForecastRecord(Base):
+    """每日预测归档：每个目标日对应预测中枢/最高/最低。"""
+
+    __tablename__ = "forecast_records"
+    __table_args__ = (
+        UniqueConstraint("symbol", "made_on", "target_date", name="uq_forecast_symbol_made_target"),
+        Index("ix_forecast_symbol_target", "symbol", "target_date"),
+        Index("ix_forecast_symbol_made", "symbol", "made_on"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    made_on: Mapped[datetime] = mapped_column(DateTime)
+    target_date: Mapped[datetime] = mapped_column(DateTime)
+    predicted: Mapped[float] = mapped_column(Float)
+    high: Mapped[float] = mapped_column(Float)
+    low: Mapped[float] = mapped_column(Float)
+    base_price: Mapped[float] = mapped_column(Float)
+    horizon_days: Mapped[int] = mapped_column(Integer, default=7)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    model: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
 def _ensure_database() -> None:

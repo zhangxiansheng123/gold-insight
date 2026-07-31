@@ -32,6 +32,18 @@ async def _job_collect_quotes() -> None:
         logger.exception("quote collection failed")
 
 
+async def _job_daily_forecast() -> None:
+    try:
+        import asyncio
+
+        from app.services.forecast_store import daily_forecast_job
+
+        result = await asyncio.to_thread(daily_forecast_job)
+        logger.info("daily forecast archived: %s", result)
+    except Exception:  # noqa: BLE001
+        logger.exception("daily forecast failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -42,11 +54,25 @@ async def lifespan(_: FastAPI):
     except Exception:  # noqa: BLE001
         logger.exception("bootstrap failed")
 
+    # 启动时也落一版预测，方便立刻回溯
+    try:
+        await _job_daily_forecast()
+    except Exception:  # noqa: BLE001
+        logger.exception("startup forecast failed")
+
     scheduler.add_job(
         _job_collect_quotes,
         "interval",
         minutes=settings.quote_interval_minutes,
         id="collect_quotes",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _job_daily_forecast,
+        "cron",
+        hour=8,
+        minute=5,
+        id="daily_forecast",
         replace_existing=True,
     )
     scheduler.start()

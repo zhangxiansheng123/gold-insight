@@ -101,21 +101,47 @@ def predict(
     symbol: str,
     horizon: int = Query(7, ge=1, le=30, description="预测天数 1-30"),
     days: int = Query(365, ge=90, le=2000),
+    persist: bool = Query(True, description="是否落库预测高低点"),
 ) -> dict[str, Any]:
     symbol = symbol.upper()
     if symbol not in PRODUCTS:
         raise HTTPException(status_code=404, detail="未知品种")
-    df = load_history_df(symbol, days=days)
-    if df.empty:
-        raise HTTPException(status_code=404, detail="暂无历史，请先同步数据")
     try:
+        from app.services.forecast_store import run_and_save_forecast
+
+        if persist:
+            return run_and_save_forecast(symbol, horizon=horizon, days=days)
+
+        df = load_history_df(symbol, days=days)
+        if df.empty:
+            raise HTTPException(status_code=404, detail="暂无历史，请先同步数据")
         result = predict_price(to_ohlc_frame(df.to_dict(orient="records")), symbol, horizon_days=horizon)
+        payload = result_to_dict(result)
+        payload["name"] = PRODUCTS[symbol]["name"]
+        payload["unit"] = PRODUCTS[symbol]["unit"]
+        payload["saved_points"] = 0
+        return payload
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    payload = result_to_dict(result)
-    payload["name"] = PRODUCTS[symbol]["name"]
-    payload["unit"] = PRODUCTS[symbol]["unit"]
-    return payload
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/forecasts/{symbol}")
+def forecasts(
+    symbol: str,
+    start: str | None = Query(None, description="目标日起始 YYYY-MM-DD"),
+    end: str | None = Query(None, description="目标日结束 YYYY-MM-DD"),
+    made_on: str | None = Query(None, description="仅看某日生成的预测 YYYY-MM-DD"),
+) -> dict[str, Any]:
+    symbol = symbol.upper()
+    if symbol not in PRODUCTS:
+        raise HTTPException(status_code=404, detail="未知品种")
+    from app.services.forecast_store import query_forecasts
+
+    return query_forecasts(symbol, start=start, end=end, made_on=made_on)
 
 
 @router.get("/compare")
