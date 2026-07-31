@@ -316,19 +316,19 @@ def _today_session_range(symbol: str) -> tuple[float | None, float | None]:
 
 def _blend_realized_extremes(result: PredictionResult, symbol: str) -> PredictionResult:
     """
-    仅在落库重算时调用：把今日已实现最低/最高、现价并入最近预测日的上下限。
-    盘中不刷新；下次定时/手动重算才会再吸收新的极值。
+    仅在落库重算时调用：把今日已实现最低/最高、现价并入「今日」预测点的上下限；
+    若无今日点则并入最近一天。盘中不刷新；下次定时/手动重算才会再吸收新的极值。
     """
     if not result.points:
         return result
 
     live = _latest_live_price(symbol)
     session_low, session_high = _today_session_range(symbol)
+    today = datetime.now().strftime("%Y-%m-%d")
+    target = next((p for p in result.points if p.date == today), result.points[0])
 
-    # 交易点取最近一天；同时把实现区间反映到该点，保证上车<=已见最低
-    first = result.points[0]
-    lows = [first.lower]
-    highs = [first.upper]
+    lows = [target.lower]
+    highs = [target.upper]
     if session_low is not None:
         lows.append(session_low)
     if session_high is not None:
@@ -337,10 +337,10 @@ def _blend_realized_extremes(result: PredictionResult, symbol: str) -> Predictio
         lows.append(live)
         highs.append(live)
 
-    first.lower = round(min(lows), 2)
-    first.upper = round(max(highs), 2)
-    if first.lower > first.upper:
-        first.lower, first.upper = first.upper, first.lower
+    target.lower = round(min(lows), 2)
+    target.upper = round(max(highs), 2)
+    if target.lower > target.upper:
+        target.lower, target.upper = target.upper, target.lower
     return result
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -49,7 +49,6 @@ DISCLAIMER = (
 def _prediction_band(*, resid_std: float, atr: float, price: float, step: int) -> float:
     """
     合成预测半宽：残差带 × ATR 带 × 价格比例地板，取最大。
-    比单纯 resid*1.64 更能覆盖金价日常跳空。
     """
     step = max(1, int(step))
     grow = float(np.sqrt(step))
@@ -57,6 +56,13 @@ def _prediction_band(*, resid_std: float, atr: float, price: float, step: int) -
     atr_band = max(0.0, atr) * grow * float(settings.forecast_band_atr_mult)
     floor_band = abs(price) * float(settings.forecast_band_floor_pct) * grow
     return float(max(resid_band, atr_band, floor_band, 0.0))
+
+
+def _next_trading_day(d: pd.Timestamp | datetime | date) -> pd.Timestamp:
+    x = pd.Timestamp(d).normalize() + timedelta(days=1)
+    while int(x.weekday()) >= 5:
+        x += timedelta(days=1)
+    return x
 
 
 def _feature_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -126,7 +132,14 @@ def predict_price(df: pd.DataFrame, symbol: str, horizon_days: int = 7) -> Predi
     last_known = working.dropna(subset=["close"]).iloc[-1]
     current_price = float(last_known["close"])
     points: list[ForecastPoint] = []
-    cursor_date = pd.to_datetime(last_known["trade_date"])
+    last_bar_day = pd.to_datetime(last_known["trade_date"]).normalize()
+    today = pd.Timestamp(datetime.now().date())
+    # 末日已是今日：第一步目标=今日（点「生成预测」会覆盖今日交易点）
+    # 否则从下一交易日起算
+    if last_bar_day.date() >= today.date():
+        cursor_date = today
+    else:
+        cursor_date = _next_trading_day(last_bar_day)
 
     last_row = working.dropna(subset=FEATURE_COLS).iloc[-1]
     current_features = last_row[FEATURE_COLS].astype(float).values.reshape(1, -1)
@@ -142,16 +155,18 @@ def predict_price(df: pd.DataFrame, symbol: str, horizon_days: int = 7) -> Predi
         predicted = float(model.predict(x_scaled)[0])
         # 轻微均值回归，避免长周期发散
         predicted = 0.85 * predicted + 0.15 * current_price
+        same_day = cursor_date.date() == today.date()
+        if same_day:
+            # 今日交易点更贴现价
+            predicted = 0.55 * predicted + 0.45 * current_price
         band = _prediction_band(
             resid_std=resid_std,
             atr=float(last_row.get("atr14") or 0.0),
             price=predicted,
             step=step,
         )
-        cursor_date = cursor_date + timedelta(days=1)
-        # 跳过周末（黄金周末休市近似）
-        while cursor_date.weekday() >= 5:
-            cursor_date += timedelta(days=1)
+        if same_day:
+            band *= float(settings.forecast_band_same_day_scale)
 
         points.append(
             ForecastPoint(
@@ -175,6 +190,7 @@ def predict_price(df: pd.DataFrame, symbol: str, horizon_days: int = 7) -> Predi
         for name, val in macro.items():
             next_feats[FEATURE_COLS.index(name)] = val
         current_features = next_feats.reshape(1, -1)
+        cursor_date = _next_trading_day(cursor_date)
 
     final_price = points[-1].predicted
     change_pct = (final_price - current_price) / current_price * 100

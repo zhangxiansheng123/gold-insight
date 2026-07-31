@@ -42,10 +42,11 @@ class Settings(BaseSettings):
     # 上海黄金交易所 · 黄金9999（东财），作积存金人民币日线骨架
     au9999_eastmoney_secid: str = "118.AU9999"
 
-    # 预测带宽：残差 z 分位 + ATR 放大 + 价格比例地板（约覆盖日常波动）
-    forecast_band_z: float = 2.0  # ~95% 正态分位（原 1.64 过紧）
-    forecast_band_atr_mult: float = 1.2
-    forecast_band_floor_pct: float = 0.012  # 至少约 ±1.2% * √step
+    # 预测带宽：残差 z + ATR + 价格地板；首日/当日再额外收一档
+    forecast_band_z: float = 1.64  # ~90% 正态分位，全日带不宜过宽
+    forecast_band_atr_mult: float = 1.0
+    forecast_band_floor_pct: float = 0.009  # 约 ±0.9% * √step
+    forecast_band_same_day_scale: float = 0.72  # 目标日=今日时，按剩余盘中波动收窄
 
     # 定时采集（分钟）
     quote_interval_minutes: int = 5
