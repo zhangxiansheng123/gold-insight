@@ -352,6 +352,8 @@
       renderQuotes(data.items, { silent });
       const now = new Date().toLocaleTimeString("zh-CN");
       setLiveStatus("live", `实时 · ${now}`);
+      // 轻量刷新猜涨跌现价/倒计时，不打断操作
+      if (silent) loadGuess({ silent: true }).catch(() => {});
     } catch (e) {
       setLiveStatus("error", "刷新失败");
       if (!silent) throw e;
@@ -887,6 +889,89 @@
     compareChart.resize();
   });
 
+  let guessTimer = null;
+  let guessSecondsLeft = 0;
+
+  function formatCountdown(sec) {
+    const s = Math.max(0, Number(sec) || 0);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+    return `${m}:${String(r).padStart(2, "0")}`;
+  }
+
+  function renderGuess(data) {
+    if (!data) return;
+    const phaseEl = document.getElementById("guessPhase");
+    const sessEl = document.getElementById("guessSession");
+    const startEl = document.getElementById("guessStart");
+    const liveEl = document.getElementById("guessLive");
+    const predEndEl = document.getElementById("guessPredEnd");
+    const realizedEl = document.getElementById("guessRealized");
+    const predChgEl = document.getElementById("guessPredChg");
+    const cdEl = document.getElementById("guessCountdown");
+    const summaryEl = document.getElementById("guessSummary");
+    const reasonsEl = document.getElementById("guessReasons");
+    const verdictEl = document.getElementById("guessVerdict");
+
+    const sess = data.session || {};
+    const price = data.price || {};
+    const fc = data.forecast || {};
+
+    if (phaseEl) phaseEl.textContent = sess.phase_label || "--";
+    if (sessEl) {
+      sessEl.textContent = `${sess.day || ""} 第${sess.no || "-"}场 ${sess.start || ""}-${sess.end || ""} · ${sess.rule || ""}`;
+    }
+    if (startEl) startEl.textContent = price.start != null ? fmt(price.start) : "--";
+    if (liveEl) liveEl.textContent = price.live != null ? fmt(price.live) : "--";
+    if (predEndEl) predEndEl.textContent = price.predicted_end != null ? fmt(price.predicted_end) : "--";
+    if (realizedEl) {
+      const v = price.realized_change;
+      realizedEl.textContent = v == null ? "--" : `${v >= 0 ? "+" : ""}${fmt(v)}`;
+      realizedEl.className = clsChange(v);
+    }
+    if (predChgEl) {
+      const v = price.predicted_change;
+      predChgEl.textContent = v == null ? "--" : `${v >= 0 ? "+" : ""}${fmt(v)}`;
+      predChgEl.className = clsChange(v);
+    }
+    guessSecondsLeft = Number(sess.seconds_left || 0);
+    if (cdEl) cdEl.textContent = formatCountdown(guessSecondsLeft);
+    if (summaryEl) summaryEl.textContent = fc.summary || data.disclaimer || "";
+    if (verdictEl) {
+      const dir = fc.direction;
+      const label = fc.label || "--";
+      const dirCls = dir === "up" ? "up" : dir === "down" ? "down" : "flat";
+      verdictEl.innerHTML =
+        `<span class="guess-dir ${dirCls}">预测${label}</span>` +
+        `<span class="guess-conf" id="guessConf">${formatProb(fc.confidence, { label: "把握" })}</span>`;
+    }
+    if (reasonsEl) {
+      const reasons = data.meta?.reasons || [];
+      reasonsEl.innerHTML = reasons.map((r) => `<li>${r}</li>`).join("");
+    }
+  }
+
+  function tickGuessCountdown() {
+    const cdEl = document.getElementById("guessCountdown");
+    if (!cdEl) return;
+    guessSecondsLeft = Math.max(0, guessSecondsLeft - 1);
+    cdEl.textContent = formatCountdown(guessSecondsLeft);
+  }
+
+  async function loadGuess({ silent = false } = {}) {
+    try {
+      const data = await api("/api/guess/status");
+      renderGuess(data);
+      if (!guessTimer) {
+        guessTimer = setInterval(tickGuessCountdown, 1000);
+      }
+    } catch (e) {
+      if (!silent) console.warn(e);
+    }
+  }
+
   (async function boot() {
     defaultForecastRange();
     try {
@@ -895,12 +980,14 @@
       await loadHistory();
       await loadEntryExit({ silent: true });
       await loadMarketBrief({ silent: true });
+      await loadGuess({ silent: true });
       await loadPrediction({ persist: false });
       await loadForecastHistory({ silent: true });
     } catch (e) {
       setLiveStatus("error", "连接失败");
       els.quoteCards.innerHTML = `<div class="quote-card">加载失败：${e.message}<br/>可稍后刷新，或检查网络与数据源。</div>`;
       startQuotePolling();
+      loadGuess({ silent: true }).catch(() => {});
     }
   })();
 })();

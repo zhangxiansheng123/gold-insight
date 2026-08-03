@@ -185,6 +185,17 @@ def market_brief() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/guess/status")
+def guess_status() -> dict[str, Any]:
+    """本场涨跌预测（按 4 小时场次：收盘相对开盘）。"""
+    from app.services.guess_game import session_direction_forecast
+
+    try:
+        return session_direction_forecast()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/compare")
 def compare(days: int = Query(90, ge=30, le=730)) -> dict[str, Any]:
     """伦敦金与浙商积存金真实价格对比（双轴对齐日期）。"""

@@ -54,6 +54,29 @@
           <button id="btnPredict" class="primary-btn" type="button">生成预测</button>
         </div>
         <p class="disclaimer" id="topDisclaimer">预测不构成投资建议，请独立判断并控制仓位。</p>
+        <article class="guess-card" id="guessCard">
+          <div class="guess-head">
+            <h3>本场涨跌预测</h3>
+            <span class="muted" id="guessPhase">--</span>
+          </div>
+          <p class="guess-session muted" id="guessSession">加载场次…</p>
+          <div class="guess-verdict" id="guessVerdict">
+            <span class="guess-dir muted">--</span>
+            <span class="guess-conf muted" id="guessConf"></span>
+          </div>
+          <p class="guess-summary muted" id="guessSummary"></p>
+          <div class="guess-prices">
+            <div><span class="label">本场开盘</span><strong id="guessStart">--</strong></div>
+            <div><span class="label">现价</span><strong id="guessLive">--</strong></div>
+            <div><span class="label">预估收盘</span><strong id="guessPredEnd">--</strong></div>
+          </div>
+          <div class="guess-prices">
+            <div><span class="label">已实现</span><strong id="guessRealized">--</strong></div>
+            <div><span class="label">预估变动</span><strong id="guessPredChg">--</strong></div>
+            <div><span class="label">距收盘</span><strong id="guessCountdown">--</strong></div>
+          </div>
+          <ul class="guess-reasons muted" id="guessReasons"></ul>
+        </article>
       </div>
       <div class="hero-quotes" id="quoteCards">
         <div class="quote-skeleton"></div>

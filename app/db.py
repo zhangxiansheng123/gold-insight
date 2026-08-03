@@ -65,6 +65,39 @@ class ForecastRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class GuessPlayer(Base):
+    """猜涨跌本地玩家金豆余额。"""
+
+    __tablename__ = "guess_players"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    beans: Mapped[int] = mapped_column(Integer, default=1000)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class GuessBet(Base):
+    """猜涨跌下注记录。"""
+
+    __tablename__ = "guess_bets"
+    __table_args__ = (
+        Index("ix_guess_player_session", "player_id", "session_key"),
+        Index("ix_guess_session", "session_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    player_id: Mapped[str] = mapped_column(String(64), index=True)
+    session_key: Mapped[str] = mapped_column(String(32), index=True)
+    direction: Mapped[str] = mapped_column(String(8))  # up / down
+    beans: Mapped[int] = mapped_column(Integer)
+    start_price: Mapped[float] = mapped_column(Float)
+    end_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    result: Mapped[str | None] = mapped_column(String(16), nullable=True)  # win/lose/flat/pending
+    payout: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 def _ensure_database() -> None:
     """若库不存在则创建（需账号有建库权限）。"""
     server_url = (

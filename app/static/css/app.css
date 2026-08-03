@@ -190,6 +190,73 @@ main { width: min(1180px, calc(100% - 2rem)); margin: 0 auto 3rem; }
 }
 .disclaimer { margin-top: 1rem; color: #6b7785; font-size: 0.82rem; }
 
+.guess-card {
+  margin-top: 1.1rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,250,252,0.88));
+  box-shadow: var(--shadow);
+  max-width: 36rem;
+}
+.guess-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.guess-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.guess-session { margin: 0.35rem 0 0.7rem; font-size: 0.82rem; }
+.guess-verdict {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin: 0.2rem 0 0.35rem;
+}
+.guess-dir {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.guess-dir.up { color: var(--up); }
+.guess-dir.down { color: var(--down); }
+.guess-dir.flat { color: #6b7785; }
+.guess-summary {
+  margin: 0 0 0.75rem;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+.guess-prices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+.guess-prices .label {
+  display: block;
+  font-size: 0.75rem;
+  color: #6b7785;
+}
+.guess-prices strong {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+.guess-reasons {
+  margin: 0.35rem 0 0;
+  padding-left: 1.05rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+@media (max-width: 700px) {
+  .guess-prices { grid-template-columns: 1fr 1fr 1fr; }
+}
+
 .hero-quotes { display: grid; gap: 0.9rem; align-content: center; }
 .quote-row .price.entry-price { color: var(--down); }
 .quote-row .price.exit-price { color: var(--up); }
