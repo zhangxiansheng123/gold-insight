@@ -174,6 +174,17 @@ def entry_exit() -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/market-brief")
+def market_brief() -> dict[str, Any]:
+    """规则版事件摘要 + 风险提示（不改交易点）。"""
+    from app.services.market_brief import build_market_brief
+
+    try:
+        return build_market_brief()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/compare")
 def compare(days: int = Query(90, ge=30, le=730)) -> dict[str, Any]:
     """伦敦金与浙商积存金真实价格对比（双轴对齐日期）。"""

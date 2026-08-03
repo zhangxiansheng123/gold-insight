@@ -10,6 +10,8 @@
     zheshangPrediction: null,
     prediction: null,
     entryExit: null,
+    marketBrief: null,
+    quotesShellReady: false,
     quoteTimer: null,
     quoteRefreshing: false,
     quoteIntervalMs: 3000,
@@ -108,42 +110,109 @@
     if (!board) return;
 
     if (!data || data.entry == null || data.exit == null) {
-      board.innerHTML = `
-        <div class="quote-board-head">
-          <span>浙商积存金交易点</span>
-        </div>
-        <div class="muted">生成预测后显示上车/下车点</div>
-      `;
+      if (board.dataset.mode !== "empty") {
+        board.dataset.mode = "empty";
+        board.innerHTML = `
+          <div class="quote-board-head">
+            <span>浙商积存金交易点</span>
+          </div>
+          <div class="muted">生成预测后显示上车/下车点</div>
+          <div class="market-brief" id="marketBrief"></div>
+        `;
+        renderMarketBrief(state.marketBrief);
+      }
       return;
     }
 
+    const sig = `${data.target_date}|${data.made_on}|${data.entry}|${data.exit}|${data.mid}`;
+    if (board.dataset.mode === "ready" && board.dataset.sig === sig) {
+      patchEntryExitLivePrice();
+      return;
+    }
+
+    board.dataset.mode = "ready";
+    board.dataset.sig = sig;
     board.innerHTML = `
       <div class="quote-board-head">
         <span>浙商积存金交易点</span>
-        <span class="muted">${data.target_date ? `目标日 ${data.target_date}` : ""}${data.made_on ? ` · 生成 ${data.made_on}` : ""}</span>
+        <span class="muted" data-role="ee-meta">${data.target_date ? `目标日 ${data.target_date}` : ""}${data.made_on ? ` · 生成 ${data.made_on}` : ""}</span>
       </div>
       <div class="quote-rows">
         <div class="quote-row">
           <div class="name">上车点</div>
-          <div class="price entry-price">${fmt(data.entry)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
+          <div class="price entry-price" data-role="ee-entry">${fmt(data.entry)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
           <div class="meta">
             <span class="muted">预测最低（区间下限）</span>
-            <span class="muted">中枢 ${fmt(data.mid)}</span>
+            <span class="muted" data-role="ee-mid">中枢 ${fmt(data.mid)}</span>
           </div>
         </div>
         <div class="quote-row">
           <div class="name">下车点</div>
-          <div class="price exit-price">${fmt(data.exit)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
+          <div class="price exit-price" data-role="ee-exit">${fmt(data.exit)} <small style="font-size:0.85rem;color:#6b7785">元/克</small></div>
           <div class="meta">
             <span class="muted">预测最高（区间上限）</span>
-            <span class="muted">现价 ${data.live == null ? "--" : fmt(data.live)}</span>
+            <span class="muted" data-role="live-price">现价 ${data.live == null ? "--" : fmt(data.live)}</span>
           </div>
         </div>
       </div>
+      <div class="market-brief" id="marketBrief"></div>
     `;
-    // 现价仅作对照展示；每次行情刷新时只更新现价文案，不改交易点
-    const liveEl = board.querySelector(".quote-row:last-child .meta span:last-child");
-    if (liveEl) liveEl.dataset.role = "live-price";
+    renderMarketBrief(state.marketBrief);
+  }
+
+  function renderMarketBrief(data) {
+    const el = document.getElementById("marketBrief");
+    if (!el) return;
+    if (!data) {
+      const empty = `<div class="muted">事件摘要暂不可用</div>`;
+      if (el.dataset.sig !== "empty") {
+        el.dataset.sig = "empty";
+        el.innerHTML = empty;
+      }
+      return;
+    }
+    const sig = JSON.stringify({
+      e: (data.events || []).map((x) => [x.title, x.detail]),
+      r: (data.risks || []).map((x) => [x.level, x.text]),
+    });
+    if (el.dataset.sig === sig) return;
+
+    const events = (data.events || [])
+      .map((e) => `<li><strong>${e.title}</strong>：${e.detail}</li>`)
+      .join("");
+    const risks = (data.risks || [])
+      .map(
+        (r) =>
+          `<li class="risk-${r.level || "info"}"><span class="risk-tag">${
+            ({ info: "提示", watch: "留意", warn: "当心", high: "高风险" })[r.level] || "提示"
+          }</span>${r.text}</li>`
+      )
+      .join("");
+    el.dataset.sig = sig;
+    el.innerHTML = `
+      <div class="brief-cols">
+        <div>
+          <div class="brief-title">今日事件摘要</div>
+          <ul class="brief-list">${events || "<li class='muted'>暂无</li>"}</ul>
+        </div>
+        <div>
+          <div class="brief-title">风险提示</div>
+          <ul class="brief-list">${risks || "<li class='muted'>暂无</li>"}</ul>
+        </div>
+      </div>
+      <p class="brief-note muted">${data.note || ""}</p>
+    `;
+  }
+
+  async function loadMarketBrief({ silent = false } = {}) {
+    try {
+      const data = await api("/api/market-brief");
+      state.marketBrief = data;
+      renderMarketBrief(data);
+    } catch (e) {
+      if (!silent) console.warn(e);
+      if (!state.marketBrief) renderMarketBrief(null);
+    }
   }
 
   function patchEntryExitLivePrice() {
@@ -161,6 +230,7 @@
       const data = await api("/api/entry-exit");
       state.entryExit = data;
       renderEntryExit(data);
+      loadMarketBrief({ silent: true }).catch(() => {});
     } catch (e) {
       if (!silent) {
         renderEntryExit(null);
@@ -168,55 +238,109 @@
     }
   }
 
-  function renderQuotes(items, { silent = false } = {}) {
-    const prevMap = Object.fromEntries((state.quotes || []).map((q) => [q.symbol, q.price]));
-    state.quotes = items || [];
-    const rows = state.quotes
-      .map((q) => {
-        const pct = q.change_pct;
-        const sign = pct != null && pct >= 0 ? "+" : "";
-        const prev = prevMap[q.symbol];
-        let flash = "";
-        if (prev != null && q.price != null && Number(prev) !== Number(q.price)) {
-          flash = Number(q.price) > Number(prev) ? "flash-up" : "flash-down";
-        }
-        return `
-          <div class="quote-row">
-            <div class="name">${q.name}</div>
-            <div class="price ${flash}">${fmt(q.price)} <small style="font-size:0.85rem;color:#6b7785">${q.unit || ""}</small></div>
-            <div class="meta">
-              <span class="${clsChange(pct)}">${sign}${fmt(pct, 2)}%</span>
-              <span>${new Date(q.ts).toLocaleTimeString("zh-CN")}</span>
-            </div>
-          </div>`;
-      })
-      .join("");
-
-    const latestTs = state.quotes[0]?.ts
-      ? new Date(state.quotes[0].ts).toLocaleTimeString("zh-CN")
-      : "--";
-
+  function ensureQuoteShell({ animate = false } = {}) {
+    if (document.getElementById("liveQuoteBoard") && document.getElementById("entryExitCard")) {
+      return false;
+    }
+    const anim = animate ? "quote-board--enter" : "quote-board--static";
     els.quoteCards.innerHTML = `
-      <article class="quote-board" style="animation-delay:${silent ? 0 : 0.05}s">
+      <article class="quote-board ${anim}" id="liveQuoteBoard">
         <div class="quote-board-head">
           <span>实时行情</span>
-          <span class="live-tag">LIVE · ${latestTs}</span>
+          <span class="live-tag" data-role="live-tag">LIVE · --</span>
         </div>
-        <div class="quote-rows">
-          ${rows || `<div class="muted">暂无行情</div>`}
+        <div class="quote-rows" id="liveQuoteRows">
+          <div class="muted">加载行情…</div>
         </div>
       </article>
-      <article class="quote-board" id="entryExitCard" style="animation-delay:${silent ? 0 : 0.12}s">
+      <article class="quote-board ${anim}" id="entryExitCard">
         <div class="quote-board-head">
           <span>浙商积存金交易点</span>
         </div>
         <div class="muted">生成预测后显示上车/下车点</div>
+        <div class="market-brief" id="marketBrief"></div>
       </article>
     `;
-    // 上车/下车点只展示缓存的预测结果，不随实时行情重算
+    return true;
+  }
+
+  function renderQuotes(items, { silent = false } = {}) {
+    const prevMap = Object.fromEntries((state.quotes || []).map((q) => [q.symbol, q.price]));
+    state.quotes = items || [];
+    const firstPaint = ensureQuoteShell({ animate: !silent && !state.quotesShellReady });
+    if (firstPaint) state.quotesShellReady = true;
+
+    const rowsEl = document.getElementById("liveQuoteRows");
+    const tagEl = document.querySelector('[data-role="live-tag"]');
+    if (!rowsEl) return;
+
+    const latestTs = state.quotes[0]?.ts
+      ? new Date(state.quotes[0].ts).toLocaleTimeString("zh-CN")
+      : "--";
+    if (tagEl) tagEl.textContent = `LIVE · ${latestTs}`;
+
+    if (!state.quotes.length) {
+      rowsEl.innerHTML = `<div class="muted">暂无行情</div>`;
+      return;
+    }
+
+    // 首次或品种数量变化才重建行结构，之后只改数字
+    const needRebuild =
+      rowsEl.dataset.count !== String(state.quotes.length) ||
+      !rowsEl.querySelector("[data-symbol]");
+    if (needRebuild) {
+      rowsEl.dataset.count = String(state.quotes.length);
+      rowsEl.innerHTML = state.quotes
+        .map(
+          (q) => `
+          <div class="quote-row" data-symbol="${q.symbol}">
+            <div class="name" data-role="q-name">${q.name}</div>
+            <div class="price" data-role="q-price">${fmt(q.price)} <small style="font-size:0.85rem;color:#6b7785">${q.unit || ""}</small></div>
+            <div class="meta">
+              <span data-role="q-pct">--</span>
+              <span data-role="q-ts">--</span>
+            </div>
+          </div>`
+        )
+        .join("");
+    }
+
+    state.quotes.forEach((q) => {
+      const row = rowsEl.querySelector(`[data-symbol="${q.symbol}"]`);
+      if (!row) return;
+      const priceEl = row.querySelector('[data-role="q-price"]');
+      const pctEl = row.querySelector('[data-role="q-pct"]');
+      const tsEl = row.querySelector('[data-role="q-ts"]');
+      const prev = prevMap[q.symbol];
+      const pct = q.change_pct;
+      const sign = pct != null && pct >= 0 ? "+" : "";
+
+      if (priceEl) {
+        priceEl.innerHTML = `${fmt(q.price)} <small style="font-size:0.85rem;color:#6b7785">${q.unit || ""}</small>`;
+        priceEl.classList.remove("flash-up", "flash-down");
+        if (prev != null && q.price != null && Number(prev) !== Number(q.price)) {
+          const cls = Number(q.price) > Number(prev) ? "flash-up" : "flash-down";
+          // 强制重启动画
+          void priceEl.offsetWidth;
+          priceEl.classList.add(cls);
+        }
+      }
+      if (pctEl) {
+        pctEl.className = clsChange(pct);
+        pctEl.textContent = `${sign}${fmt(pct, 2)}%`;
+      }
+      if (tsEl) {
+        tsEl.textContent = q.ts ? new Date(q.ts).toLocaleTimeString("zh-CN") : "--";
+      }
+    });
+
+    // 交易点与摘要：只补丁现价，不整卡重绘
     if (state.entryExit) {
-      renderEntryExit(state.entryExit);
-      patchEntryExitLivePrice();
+      if (document.getElementById("entryExitCard")?.dataset.mode !== "ready") {
+        renderEntryExit(state.entryExit);
+      } else {
+        patchEntryExitLivePrice();
+      }
     }
   }
 
@@ -770,6 +894,7 @@
       startQuotePolling();
       await loadHistory();
       await loadEntryExit({ silent: true });
+      await loadMarketBrief({ silent: true });
       await loadPrediction({ persist: false });
       await loadForecastHistory({ silent: true });
     } catch (e) {
